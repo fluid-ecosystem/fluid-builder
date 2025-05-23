@@ -1,7 +1,6 @@
 from maifeeulasad/java:24
 
-COPY DependencyDownloader.java .
-COPY ListDependency.java .
+COPY *.java .
 
 ARG ENTRY_FILENAME=Fluid.java
 
