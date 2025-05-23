@@ -4,4 +4,4 @@ COPY *.java .
 
 ARG ENTRY_FILENAME=Fluid.java
 
-CMD java DependencyDownloader.java && java -cp $(java ListDependency.java) && java ${ENTRY_FILENAME}
+CMD java DependencyDownloader.java && java -cp $(java ListDependency.java) && java Fluid.java
