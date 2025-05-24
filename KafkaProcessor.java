@@ -15,6 +15,7 @@ public class KafkaProcessor {
 
     private static void processBean(Object bean) {
         for (Method method : bean.getClass().getDeclaredMethods()) {
+            // System.out.println("🔍 Processing method: " + bean.getClass() + "/" + method.getName());
             if (method.isAnnotationPresent(KafkaListener.class)) {
                 startListener(bean, method);
             }
