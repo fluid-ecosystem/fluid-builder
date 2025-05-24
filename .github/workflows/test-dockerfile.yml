@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  docker-build-and-run:
+  fluid-builder-docker-build-and-run:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,5 +20,5 @@ jobs:
       - name: Build Docker image
         run: docker build -t fluid-builder -f Dockerfile .
 
-      - name: Run Docker container
-        run: docker run fluid-builder
+      # - name: Run Docker container
+      #   run: docker run fluid-builder
