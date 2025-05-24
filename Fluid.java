@@ -29,8 +29,8 @@ public class Fluid {
         List<Object> instances = new ArrayList<>();
         File currentDir = new File(".");
 
-        for (File file : currentDir.listFiles((dir, name) -> name.endsWith("Service.class"))) {
-            String className = file.getName().replace(".class", "");
+        for (File file : currentDir.listFiles((dir, name) -> name.endsWith("Service.java"))) {
+            String className = file.getName().replace(".java", "");
             try {
                 Class<?> clazz = Class.forName(className);
                 if (!Modifier.isAbstract(clazz.getModifiers())) {
