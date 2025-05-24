@@ -3,7 +3,7 @@ name: Push to Dockerhub
 on:
   push:
     branches:
-      - action-release-dockerhub
+      - main
 
 jobs:
   push-to-dockerhub:
