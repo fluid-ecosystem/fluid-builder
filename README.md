@@ -46,20 +46,16 @@ public class Fluid {
 ### Create a Listener Service 🎧
 
 ```java
-public class Main {
-    public static void main(String[] args) throws InterruptedException {
-        MessageService service = new MessageService();
-        KafkaProcessor.processListeners(service);
-        Thread.sleep(5000);
-        KafkaProcessor.shutdown();
-    }
-}
-
 public class MessageService {
     @KafkaListener(topic = "test-topic1", groupId = "test-group")
-    public void handleMessage(String message) {
-        System.out.println("🕒 Received at " + System.currentTimeMillis());
-        System.out.println("📥 Message: " + message);
+    public void handleMessage1(String message) {
+        System.out.println("1-🕒 Received at " + System.currentTimeMillis());
+        System.out.println("1-📥 Message: " + message);
+    }
+    @KafkaListener(topic = "test-topic2", groupId = "test-group")
+    public void handleMessage2(String message) {
+        System.out.println("2-🕒 Received at " + System.currentTimeMillis());
+        System.out.println("2-📥 Message: " + message);
     }
 }
 ```
