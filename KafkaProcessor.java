@@ -57,6 +57,14 @@ public class KafkaProcessor {
             }
         } catch (Exception e) {
             System.err.println("Error processing message: " + e.getMessage());
+            // ShortCircuit handling
+            if (method.isAnnotationPresent(ShortCircuit.class)) {
+                ShortCircuit sc = method.getAnnotation(ShortCircuit.class);
+                String topic = sc.topic();
+                String bootstrapServers = sc.bootstrapServers();
+                String errorMsg = "ShortCircuit: " + e.getMessage();
+                KafkaMessenger.sendMessage(bootstrapServers, topic, null, errorMsg);
+            }
         }
     }
 
