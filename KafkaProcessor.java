@@ -50,10 +50,18 @@ public class KafkaProcessor {
 
     private static void invokeListener(Object bean, Method method, ConsumerRecord<String, String> record) {
         try {
+            Object result = null;
             if (method.getParameterCount() == 1) {
-                method.invoke(bean, record.value());
+                result = method.invoke(bean, record.value());
             } else if (method.getParameterCount() == 2) {
-                method.invoke(bean, record.key(), record.value());
+                result = method.invoke(bean, record.key(), record.value());
+            }
+            // If @SendTo is present, send the result to the specified topic
+            if (method.isAnnotationPresent(SendTo.class) && result != null) {
+                SendTo sendTo = method.getAnnotation(SendTo.class);
+                String topic = sendTo.topic();
+                String bootstrapServers = sendTo.bootstrapServers();
+                KafkaMessenger.sendMessage(bootstrapServers, topic, null, result.toString());
             }
         } catch (Exception e) {
             System.err.println("Error processing message: " + e.getMessage());
