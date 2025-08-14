@@ -11,6 +11,14 @@ import java.util.*;
 
 public class DependencyDownloader {
 
+    // Minimal required deps: groupId, artifactId, version
+    private static final Dependency[] MINIMAL_REQUIRED_DEPS = new Dependency[] {
+        new Dependency("com.google.code.gson", "gson", "2.8.9"),
+        new Dependency("org.slf4j", "slf4j-api", "2.0.17"),
+        new Dependency("org.apache.kafka", "kafka-clients", "3.7.1"),
+        new Dependency("com.github.spotbugs", "spotbugs-annotations", "4.8.3")
+    };
+
     static class Dependency {
         String groupId;
         String artifactId;
@@ -20,6 +28,11 @@ public class DependencyDownloader {
             this.groupId = groupId;
             this.artifactId = artifactId;
             this.version = version;
+        }
+
+        @Override
+        public String toString() {
+            return groupId + ":" + artifactId + ":" + version;
         }
     }
 
@@ -63,6 +76,30 @@ public class DependencyDownloader {
         return null;
     }
 
+    private static boolean isDependencyPresent(List<Dependency> dependencies, Dependency requiredDep) {
+        for (Dependency dep : dependencies) {
+            if (dep.groupId != null && dep.artifactId != null &&
+                dep.groupId.equals(requiredDep.groupId) && 
+                dep.artifactId.equals(requiredDep.artifactId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<Dependency> addMissingMinimalDeps(List<Dependency> pomDependencies) {
+        List<Dependency> finalDependencies = new ArrayList<>(pomDependencies);
+        
+        for (Dependency requiredDep : MINIMAL_REQUIRED_DEPS) {
+            if (!isDependencyPresent(pomDependencies, requiredDep)) {
+                System.out.println("Adding missing minimal dependency: " + requiredDep);
+                finalDependencies.add(requiredDep);
+            }
+        }
+        
+        return finalDependencies;
+    }
+
     public static void downloadDependency(Dependency dep, String outputDir) {
         try {
             Files.createDirectories(Paths.get(outputDir));
@@ -89,8 +126,10 @@ public class DependencyDownloader {
     }
 
     public static void downloadDependenciesFromPom(String pomFile, String outputDir) {
-        List<Dependency> dependencies = readPomFile(pomFile);
-        for (Dependency dep : dependencies) {
+        List<Dependency> pomDependencies = readPomFile(pomFile);
+        List<Dependency> allDependencies = addMissingMinimalDeps(pomDependencies);
+        
+        for (Dependency dep : allDependencies) {
             if (dep.groupId != null && dep.artifactId != null && dep.version != null) {
                 downloadDependency(dep, outputDir);
             } else {
