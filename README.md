@@ -60,6 +60,35 @@ public class MessageService {
 }
 ```
 
+### Compound Operations
+```
+public class MessageService {
+    @KafkaListener(topic = "test-topic1", groupId = "test-group")
+    public void handleMessage1(String message) {
+        System.out.println("1-🕒 Received at " + System.currentTimeMillis());
+        System.out.println("1-📥 Message: " + message);
+    }
+
+    @KafkaListener(topic = "test-topic2", groupId = "test-group")
+    @SendTo(topic = "processed-topic2")
+    public String handleMessage2(String message) {
+        System.out.println("2-🕒 Received at " + System.currentTimeMillis());
+        System.out.println("2-📥 Message: " + message);
+        // Forward processed message to another topic
+        return "Processed: " + message;
+    }
+
+    @KafkaListener(topic = "test-topic3", groupId = "test-group")
+    @ShortCircuit(topic = "error-topic3")
+    public void handleMessageWithError(String message) {
+        if (message.contains("fail")) {
+            throw new RuntimeException("Error detected in message!");
+        }
+        System.out.println("3-🕒 Message: " + message);
+    }
+}
+```
+
 ## 🛠️ Architecture
 
 ```
