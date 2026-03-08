@@ -119,4 +119,4 @@ PRs are welcome! Open an issue or suggest an improvement — let’s make micros
 
 ## 📜 License
 
-MIT License © 2025 Maifee Ul Asad
+MIT License © 2026 Maifee Ul Asad
