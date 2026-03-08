@@ -9,7 +9,7 @@ public class KafkaMessenger {
     
     public static void sendMessage(String topic, String message) {
         // sendMessage("localhost:9092", topic, null, message);
-        sendMessage("kafka-cluster:9092", topic, null, message);
+        sendMessage("kafka:9092", topic, null, message);
     }
 
     public static void sendMessage(String bootstrapServers, String topic, String key, String message) {
