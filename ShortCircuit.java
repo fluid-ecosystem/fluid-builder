@@ -4,5 +4,5 @@ import java.lang.annotation.*;
 @Target(ElementType.METHOD)
 public @interface ShortCircuit {
     String topic();
-    String bootstrapServers() default "kafka-cluster:9092";
+    String bootstrapServers() default "kafka:9092";
 }
