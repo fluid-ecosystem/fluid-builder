@@ -15,6 +15,7 @@ public class DependencyDownloader {
     private static final Dependency[] MINIMAL_REQUIRED_DEPS = new Dependency[] {
         new Dependency("com.google.code.gson", "gson", "2.8.9"),
         new Dependency("org.slf4j", "slf4j-api", "2.0.17"),
+        new Dependency("org.slf4j", "slf4j-simple", "2.0.7"),
         new Dependency("org.apache.kafka", "kafka-clients", "3.7.1"),
         new Dependency("com.github.spotbugs", "spotbugs-annotations", "4.8.3")
     };
