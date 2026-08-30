@@ -28,7 +28,7 @@ public class Fluid {
     private static final Logger logger = LoggerFactory.getLogger(Fluid.class);
     
     private final KafkaProducer producer;
-    private final KafkaListener consumer;
+    private final AdvancedKafkaConsumer consumer;
     private final TopicManager topicManager;
     private final ExecutorService serviceExecutor;
     private final CountDownLatch shutdownLatch;
@@ -36,7 +36,7 @@ public class Fluid {
     
     public Fluid() {
         this.producer = new KafkaProducer();
-        this.consumer = new KafkaListener();
+        this.consumer = new AdvancedKafkaConsumer();
         this.topicManager = new TopicManager();
         this.serviceExecutor = Executors.newCachedThreadPool();
         this.shutdownLatch = new CountDownLatch(1);
@@ -117,7 +117,7 @@ public class Fluid {
         String bootstrapServers = listener.bootstrapServers();
         
         // Create advanced consumer with custom configuration
-        KafkaListener customConsumer = createCustomConsumer(bootstrapServers, groupId, listener);
+        AdvancedKafkaConsumer customConsumer = createCustomConsumer(bootstrapServers, groupId, listener);
         
         if (listener.batchEnabled()) {
             // Batch processing
@@ -130,9 +130,9 @@ public class Fluid {
         }
     }
     
-    private KafkaListener createCustomConsumer(String bootstrapServers, String groupId, 
+    private AdvancedKafkaConsumer createCustomConsumer(String bootstrapServers, String groupId, 
                                                       EnhancedKafkaListener listener) {
-        KafkaListener customConsumer = new KafkaListener();
+        AdvancedKafkaConsumer customConsumer = new AdvancedKafkaConsumer();
         
         // Apply custom consumer configuration
         Properties customConfig = new Properties();
@@ -162,7 +162,7 @@ public class Fluid {
         }
     }
     
-    private KafkaListener.MessageHandler createMessageHandler(Object service, Method method, 
+    private AdvancedKafkaConsumer.MessageHandler createMessageHandler(Object service, Method method, 
                                                                      EnhancedKafkaListener listener) {
         return record -> {
             try {
@@ -182,7 +182,7 @@ public class Fluid {
         };
     }
     
-    private KafkaListener.BatchMessageHandler createBatchMessageHandler(Object service, Method method,
+    private AdvancedKafkaConsumer.BatchMessageHandler createBatchMessageHandler(Object service, Method method,
                                                                                EnhancedKafkaListener listener) {
         return records -> {
             logger.debug("Processing batch of {} messages", records.size());
@@ -305,7 +305,7 @@ public class Fluid {
     /**
      * Get the consumer instance for manual use
      */
-    public KafkaListener getConsumer() {
+    public AdvancedKafkaConsumer getConsumer() {
         return consumer;
     }
     
