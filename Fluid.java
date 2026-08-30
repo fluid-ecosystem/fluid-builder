@@ -27,7 +27,7 @@ public class Fluid {
     
     private static final Logger logger = LoggerFactory.getLogger(Fluid.class);
     
-    private final KafkaProducer producer;
+    private final AdvancedKafkaProducer producer;
     private final AdvancedKafkaConsumer consumer;
     private final TopicManager topicManager;
     private final ExecutorService serviceExecutor;
@@ -35,7 +35,7 @@ public class Fluid {
     private volatile boolean isRunning = false;
     
     public Fluid() {
-        this.producer = new KafkaProducer();
+        this.producer = new AdvancedKafkaProducer();
         this.consumer = new AdvancedKafkaConsumer();
         this.topicManager = new TopicManager();
         this.serviceExecutor = Executors.newCachedThreadPool();
@@ -298,7 +298,7 @@ public class Fluid {
     /**
      * Get the producer instance for manual use
      */
-    public KafkaProducer getProducer() {
+    public AdvancedKafkaProducer getProducer() {
         return producer;
     }
     
