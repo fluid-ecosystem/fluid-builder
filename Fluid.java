@@ -60,8 +60,8 @@ public class Fluid {
             services.forEach(svc -> logger.info("  🔹 {}", svc.getClass().getSimpleName()));
         }
         
-        // Process service listeners
-        processEnhancedListeners(services.toArray());
+        // Register handlers for both listener annotations
+        registerListeners(services);
         
         // Setup graceful shutdown
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -77,21 +77,63 @@ public class Fluid {
     }
     
     /**
-     * Process enhanced Kafka listeners with advanced features
+     * Registers every annotated handler found on the discovered services.
+     *
+     * <p>Two listener annotations are supported side by side:
+     * <ul>
+     *   <li>{@link KafkaListener} — the original three-attribute API, driven
+     *       by {@link KafkaProcessor}</li>
+     *   <li>{@link EnhancedKafkaListener} — the advanced API adding batching,
+     *       partitioning, consumer tuning and dead letter routing</li>
+     * </ul>
+     *
+     * <p>A service may mix the two across different methods. A single method
+     * carrying both is rejected: each annotation drives an independent
+     * consumer, so the handler would be invoked twice per record.
+     *
+     * @throws IllegalStateException if any method carries both annotations
      */
-    private void processEnhancedListeners(Object... services) {
+    private void registerListeners(List<Object> services) {
+        List<String> conflicts = new ArrayList<>();
+        List<Method> enhancedMethods = new ArrayList<>();
+        int standardCount = 0;
+
         for (Object service : services) {
-            processServiceListeners(service);
-        }
-    }
-    
-    private void processServiceListeners(Object service) {
-        Class<?> serviceClass = service.getClass();
-        
-        for (Method method : serviceClass.getDeclaredMethods()) {
-            if (method.isAnnotationPresent(EnhancedKafkaListener.class)) {
-                processEnhancedListener(service, method);
+            for (Method method : service.getClass().getDeclaredMethods()) {
+                boolean enhanced = method.isAnnotationPresent(EnhancedKafkaListener.class);
+                boolean standard = method.isAnnotationPresent(KafkaListener.class);
+
+                if (enhanced && standard) {
+                    conflicts.add(service.getClass().getSimpleName() + "." + method.getName());
+                } else if (enhanced) {
+                    enhancedMethods.add(method);
+                    processEnhancedListener(service, method);
+                } else if (standard) {
+                    standardCount++;
+                }
             }
+        }
+
+        if (!conflicts.isEmpty()) {
+            throw new IllegalStateException(
+                "Methods annotated with both @KafkaListener and @EnhancedKafkaListener "
+                    + "would consume each record twice: " + conflicts);
+        }
+
+        // KafkaProcessor performs its own scan for @KafkaListener, so it is
+        // handed the services wholesale rather than method by method.
+        if (standardCount > 0) {
+            KafkaProcessor.processListeners(services.toArray());
+        }
+
+        int total = enhancedMethods.size() + standardCount;
+        if (total == 0) {
+            logger.warn("⚠️ {} service(s) discovered but no @KafkaListener or "
+                + "@EnhancedKafkaListener methods found — nothing will be consumed.",
+                services.size());
+        } else {
+            logger.info("✅ Registered {} listener(s): {} standard, {} enhanced",
+                total, standardCount, enhancedMethods.size());
         }
     }
     
@@ -335,6 +377,7 @@ public class Fluid {
         try {
             producer.shutdown();
             consumer.shutdown();
+            KafkaProcessor.shutdown();
             serviceExecutor.shutdown();
             
             if (!serviceExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
