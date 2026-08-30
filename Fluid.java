@@ -174,38 +174,43 @@ public class Fluid {
         String groupId = listener.groupId();
         String bootstrapServers = KafkaConfig.resolveBootstrapServers(listener.bootstrapServers());
         
-        // Create advanced consumer with custom configuration
-        AdvancedKafkaConsumer customConsumer = createCustomConsumer(bootstrapServers, groupId, listener);
+        Properties overrides = buildConsumerOverrides(listener);
         
         if (listener.batchEnabled()) {
             // Batch processing
-            customConsumer.consumeBatch(bootstrapServers, groupId, topic, 
-                createBatchMessageHandler(service, method, listener));
+            consumer.consumeBatch(bootstrapServers, groupId, topic, 
+                createBatchMessageHandler(service, method, listener), overrides);
         } else {
             // Single message processing
-            customConsumer.subscribe(bootstrapServers, groupId, Collections.singletonList(topic),
-                createMessageHandler(service, method, listener));
+            consumer.subscribe(bootstrapServers, groupId, Collections.singletonList(topic),
+                createMessageHandler(service, method, listener), overrides);
         }
     }
     
-    private AdvancedKafkaConsumer createCustomConsumer(String bootstrapServers, String groupId, 
-                                                      EnhancedKafkaListener listener) {
-        AdvancedKafkaConsumer customConsumer = new AdvancedKafkaConsumer();
-        
-        // Apply custom consumer configuration
-        Properties customConfig = new Properties();
-        customConfig.putAll(KafkaConfig.createConsumerConfig(groupId));
-        customConfig.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-        customConfig.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, listener.maxPollRecords());
-        customConfig.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, listener.sessionTimeoutMs());
-        customConfig.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, listener.heartbeatIntervalMs());
-        customConfig.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, String.valueOf(listener.enableAutoCommit()));
-        
-        // Set partition assignment strategy
-        String assignmentStrategy = getPartitionAssignmentStrategy(listener.partitionAssignmentStrategy());
-        customConfig.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG, assignmentStrategy);
-        
-        return customConsumer;
+    /**
+     * Translates a listener's tuning attributes into consumer properties.
+     *
+     * <p>These were previously assembled into a local {@code Properties} that
+     * was never passed anywhere, so every tuning attribute on
+     * {@link EnhancedKafkaListener} was silently inert.
+     *
+     * <p>Values are supplied as strings and parsed by Kafka's own
+     * {@code ConfigDef}, which avoids the boxed-type mismatches that
+     * {@code Properties} would otherwise carry into the client.
+     */
+    private Properties buildConsumerOverrides(EnhancedKafkaListener listener) {
+        Properties overrides = new Properties();
+        overrides.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
+            String.valueOf(listener.maxPollRecords()));
+        overrides.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG,
+            String.valueOf(listener.sessionTimeoutMs()));
+        overrides.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG,
+            String.valueOf(listener.heartbeatIntervalMs()));
+        overrides.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG,
+            String.valueOf(listener.enableAutoCommit()));
+        overrides.put(ConsumerConfig.PARTITION_ASSIGNMENT_STRATEGY_CONFIG,
+            getPartitionAssignmentStrategy(listener.partitionAssignmentStrategy()));
+        return overrides;
     }
     
     private String getPartitionAssignmentStrategy(String strategy) {

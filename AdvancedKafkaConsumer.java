@@ -4,6 +4,9 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.kafka.common.errors.WakeupException;
+
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
@@ -22,14 +25,22 @@ public class AdvancedKafkaConsumer {
     
     private static final Logger logger = LoggerFactory.getLogger(AdvancedKafkaConsumer.class);
     
+    private static final Duration POLL_TIMEOUT = Duration.ofMillis(100);
+
     /**
-     * A consumer paired with the configuration it was built from.
+     * A consumer, the configuration it was built from, and a label for logs.
      *
      * <p>{@code KafkaConsumer} exposes no accessor for its own settings, so
      * the resolved {@link Properties} are retained here rather than queried
      * back off the client.
+     *
+     * <p>Each instance is owned by exactly one poll thread. {@code
+     * KafkaConsumer} is not thread safe, so consumers are never shared
+     * between subscriptions.
      */
-    private record ManagedConsumer(KafkaConsumer<String, String> consumer, Properties config) {
+    private record ManagedConsumer(Consumer<String, String> consumer,
+                                   Properties config,
+                                   String description) {
 
         boolean isAutoCommitEnabled() {
             return Boolean.parseBoolean(
@@ -37,16 +48,18 @@ public class AdvancedKafkaConsumer {
         }
     }
 
-    private final Map<String, ManagedConsumer> consumers;
+    private final List<ManagedConsumer> consumers;
     private final AtomicLong totalMessagesConsumed;
     private final AtomicLong totalBytesConsumed;
     private final ExecutorService messageProcessorExecutor;
+    private volatile boolean running;
     
     public AdvancedKafkaConsumer() {
-        this.consumers = new ConcurrentHashMap<>();
+        this.consumers = new CopyOnWriteArrayList<>();
         this.totalMessagesConsumed = new AtomicLong(0);
         this.totalBytesConsumed = new AtomicLong(0);
         this.messageProcessorExecutor = Executors.newCachedThreadPool();
+        this.running = true;
     }
     
     /**
@@ -61,10 +74,20 @@ public class AdvancedKafkaConsumer {
     }
     
     public void subscribe(String bootstrapServers, String groupId, List<String> topics, MessageHandler messageHandler) {
-        ManagedConsumer managed = getOrCreateConsumer(bootstrapServers, groupId);
-        KafkaConsumer<String, String> consumer = managed.consumer();
+        subscribe(bootstrapServers, groupId, topics, messageHandler, null);
+    }
+
+    /**
+     * Subscribes with additional consumer settings layered over the defaults.
+     *
+     * @param overrides extra consumer properties, may be {@code null}
+     */
+    public void subscribe(String bootstrapServers, String groupId, List<String> topics,
+                          MessageHandler messageHandler, Properties overrides) {
+        ManagedConsumer managed = createConsumer(bootstrapServers, groupId, overrides,
+            "topics=" + topics);
         
-        consumer.subscribe(topics, new ConsumerRebalanceListener() {
+        managed.consumer().subscribe(topics, new ConsumerRebalanceListener() {
             @Override
             public void onPartitionsRevoked(Collection<TopicPartition> partitions) {
                 logger.info("Partitions revoked: {}", partitions);
@@ -72,9 +95,11 @@ public class AdvancedKafkaConsumer {
             
             @Override
             public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
+                // Deliberately no seek here. Resuming from the committed
+                // offset is the point of a consumer group; rewinding on every
+                // rebalance would replay the whole topic. Where to start when
+                // no offset is committed is `auto.offset.reset`.
                 logger.info("Partitions assigned: {}", partitions);
-                // Optionally seek to beginning or specific offsets
-                consumer.seekToBeginning(partitions);
             }
         });
         
@@ -91,8 +116,9 @@ public class AdvancedKafkaConsumer {
     
     public void subscribeToPartitions(String bootstrapServers, String groupId, 
                                     Map<TopicPartition, Long> partitionOffsets, MessageHandler messageHandler) {
-        ManagedConsumer managed = getOrCreateConsumer(bootstrapServers, groupId);
-        KafkaConsumer<String, String> consumer = managed.consumer();
+        ManagedConsumer managed = createConsumer(bootstrapServers, groupId, null,
+            "partitions=" + partitionOffsets.keySet());
+        Consumer<String, String> consumer = managed.consumer();
         
         Set<TopicPartition> topicPartitions = partitionOffsets.keySet();
         consumer.assign(topicPartitions);
@@ -115,7 +141,20 @@ public class AdvancedKafkaConsumer {
     }
     
     public void consumeBatch(String bootstrapServers, String groupId, String topic, BatchMessageHandler batchHandler) {
-        KafkaConsumer<String, String> consumer = getOrCreateConsumer(bootstrapServers, groupId).consumer();
+        consumeBatch(bootstrapServers, groupId, topic, batchHandler, null);
+    }
+
+    /**
+     * Batch consumption with additional consumer settings layered over the
+     * defaults.
+     *
+     * @param overrides extra consumer properties, may be {@code null}
+     */
+    public void consumeBatch(String bootstrapServers, String groupId, String topic,
+                             BatchMessageHandler batchHandler, Properties overrides) {
+        ManagedConsumer managed = createConsumer(bootstrapServers, groupId, overrides,
+            "batch topic=" + topic);
+        Consumer<String, String> consumer = managed.consumer();
         consumer.subscribe(Collections.singletonList(topic));
         
         messageProcessorExecutor.submit(() -> {
@@ -161,7 +200,9 @@ public class AdvancedKafkaConsumer {
     }
     
     public void consumeWithManualOffset(String bootstrapServers, String groupId, String topic, ManualOffsetHandler offsetHandler) {
-        KafkaConsumer<String, String> consumer = getOrCreateConsumer(bootstrapServers, groupId).consumer();
+        ManagedConsumer managed = createConsumer(bootstrapServers, groupId, null,
+            "manual-offset topic=" + topic);
+        Consumer<String, String> consumer = managed.consumer();
         consumer.subscribe(Collections.singletonList(topic));
         
         messageProcessorExecutor.submit(() -> {
@@ -206,49 +247,121 @@ public class AdvancedKafkaConsumer {
         });
     }
     
+    /**
+     * Runs the poll loop for one consumer.
+     *
+     * <p>Handlers run on the poll thread rather than being dispatched to a
+     * pool. That is what makes per-partition ordering hold, and it is what
+     * lets offsets be committed only once the records they cover have
+     * actually been processed.
+     *
+     * <p>When a handler throws, the offending partition is left uncommitted
+     * for that poll and its remaining records are skipped, so ordering is not
+     * broken by continuing past a failure. Other partitions are unaffected.
+     * The record will be redelivered — route poison messages to a dead letter
+     * topic rather than relying on them being dropped.
+     */
     private void startConsuming(ManagedConsumer managed, MessageHandler messageHandler) {
-        KafkaConsumer<String, String> consumer = managed.consumer();
+        Consumer<String, String> consumer = managed.consumer();
         messageProcessorExecutor.submit(() -> {
             try {
-                while (!Thread.currentThread().isInterrupted()) {
-                    ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
-                    
-                    for (ConsumerRecord<String, String> record : records) {
-                        messageProcessorExecutor.submit(() -> {
-                            try {
-                                messageHandler.handleMessage(record);
-                                totalMessagesConsumed.incrementAndGet();
-                                
-                                long bytes = record.value() != null ? record.value().getBytes().length : 0;
-                                totalBytesConsumed.addAndGet(bytes);
-                                
-                            } catch (Exception e) {
-                                logger.error("Error processing message: {}", e.getMessage(), e);
-                            }
-                        });
+                while (running && !Thread.currentThread().isInterrupted()) {
+                    ConsumerRecords<String, String> records = consumer.poll(POLL_TIMEOUT);
+                    if (records.isEmpty()) {
+                        continue;
                     }
-                    
-                    // Auto-commit if enabled in consumer config
-                    if (managed.isAutoCommitEnabled()) {
-                        consumer.commitAsync();
+
+                    Map<TopicPartition, OffsetAndMetadata> processed = new HashMap<>();
+                    Set<TopicPartition> failed = new HashSet<>();
+
+                    for (ConsumerRecord<String, String> record : records) {
+                        TopicPartition partition =
+                            new TopicPartition(record.topic(), record.partition());
+
+                        // Preserve ordering: once a partition fails, stop
+                        // consuming it for this batch.
+                        if (failed.contains(partition)) {
+                            continue;
+                        }
+
+                        try {
+                            messageHandler.handleMessage(record);
+                            processed.put(partition, new OffsetAndMetadata(record.offset() + 1));
+                            recordConsumed(record);
+                        } catch (Exception e) {
+                            failed.add(partition);
+                            logger.error("Handler failed for {}-{} at offset {}; "
+                                    + "partition not advanced: {}",
+                                record.topic(), record.partition(), record.offset(),
+                                e.getMessage(), e);
+                        }
+                    }
+
+                    // Commit only what was processed, and only when Kafka is
+                    // not already committing on our behalf.
+                    if (!managed.isAutoCommitEnabled() && !processed.isEmpty()) {
+                        try {
+                            consumer.commitSync(processed);
+                        } catch (CommitFailedException e) {
+                            logger.error("Failed to commit offsets for {}: {}",
+                                managed.description(), e.getMessage(), e);
+                        }
                     }
                 }
+            } catch (WakeupException e) {
+                logger.debug("Consumer {} woken for shutdown", managed.description());
             } catch (Exception e) {
-                logger.error("Error in consumer: {}", e.getMessage(), e);
+                logger.error("Error in consumer {}: {}", managed.description(), e.getMessage(), e);
             } finally {
                 consumer.close();
             }
         });
     }
+
+    /**
+     * Creates the underlying client. Overridable so the poll loop can be
+     * driven by a {@code MockConsumer} without a live broker.
+     */
+    protected Consumer<String, String> newConsumer(Properties config) {
+        return new KafkaConsumer<>(config);
+    }
+
+    private void recordConsumed(ConsumerRecord<String, String> record) {
+        totalMessagesConsumed.incrementAndGet();
+        totalBytesConsumed.addAndGet(
+            record.value() != null ? record.value().getBytes(StandardCharsets.UTF_8).length : 0);
+    }
     
-    private ManagedConsumer getOrCreateConsumer(String bootstrapServers, String groupId) {
-        String key = bootstrapServers + ":" + groupId;
-        return consumers.computeIfAbsent(key, servers -> {
-            logger.info("Creating new Kafka consumer for group {} on servers {}", groupId, bootstrapServers);
-            Properties config = KafkaConfig.createConsumerConfig(groupId);
-            config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-            return new ManagedConsumer(new KafkaConsumer<>(config), config);
-        });
+    /**
+     * Builds a consumer dedicated to one subscription.
+     *
+     * <p>Consumers are never shared. {@code KafkaConsumer} is not thread safe,
+     * and two subscriptions sharing an instance would also clobber each
+     * other's {@code subscribe()} calls, silently stopping one of them.
+     *
+     * @param overrides extra consumer properties layered over the defaults,
+     *                  may be {@code null}
+     */
+    private ManagedConsumer createConsumer(String bootstrapServers, String groupId,
+                                           Properties overrides, String description) {
+        String resolved = KafkaConfig.resolveBootstrapServers(bootstrapServers);
+
+        Properties config = KafkaConfig.createConsumerConfig(groupId);
+        config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, resolved);
+        if (overrides != null) {
+            config.putAll(overrides);
+            // The caller does not get to redirect the consumer.
+            config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, resolved);
+            config.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        }
+
+        logger.info("Creating Kafka consumer for group {} on {} ({})",
+            groupId, resolved, description);
+
+        ManagedConsumer managed =
+            new ManagedConsumer(newConsumer(config), config, description);
+        consumers.add(managed);
+        return managed;
     }
     
     /**
@@ -267,26 +380,34 @@ public class AdvancedKafkaConsumer {
      */
     public void shutdown() {
         logger.info("Shutting down {} Kafka consumers", consumers.size());
-        
+
+        // Order matters. Poll loops block in poll(), so they must be woken
+        // before the executor is awaited — otherwise the wait always times
+        // out and the loops are killed mid-batch, after handlers ran but
+        // before their offsets were committed.
+        running = false;
+        consumers.forEach(managed -> {
+            try {
+                managed.consumer().wakeup();
+            } catch (Exception e) {
+                logger.error("Error waking consumer {}: {}",
+                    managed.description(), e.getMessage(), e);
+            }
+        });
+
         messageProcessorExecutor.shutdown();
         try {
             if (!messageProcessorExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+                logger.warn("Consumers did not stop within 30s; forcing shutdown");
                 messageProcessorExecutor.shutdownNow();
             }
         } catch (InterruptedException e) {
             messageProcessorExecutor.shutdownNow();
             Thread.currentThread().interrupt();
         }
-        
-        consumers.values().forEach(managed -> {
-            try {
-                KafkaConsumer<String, String> consumer = managed.consumer();
-                consumer.wakeup(); // Wake up any waiting poll
-                consumer.close();
-            } catch (Exception e) {
-                logger.error("Error closing consumer: {}", e.getMessage(), e);
-            }
-        });
+
+        // Each poll loop closes its own consumer on the way out; this only
+        // catches any that never started.
         consumers.clear();
         logger.info("All consumers shut down successfully");
     }
