@@ -1,8 +1,10 @@
 name: Auto Assign to Maifee in fluid builder repo
+# Issues only. pozil/auto-assign-issue reads issue context and errors with
+# "Couldn't find issue info in current context" on pull_request events, so
+# every PR carried a failed check. Pull requests here are opened by the
+# owner, so there is nothing to assign.
 on:
   issues:
-    types: [opened]
-  pull_request:
     types: [opened]
 jobs:
   run:
