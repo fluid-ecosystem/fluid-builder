@@ -18,23 +18,23 @@ import java.util.concurrent.atomic.AtomicLong;
  * - Performance monitoring and metrics
  * - Dead letter queue support
  */
-public class KafkaProducer {
+public class AdvancedKafkaProducer {
     
-    private static final Logger logger = LoggerFactory.getLogger(KafkaProducer.class);
+    private static final Logger logger = LoggerFactory.getLogger(AdvancedKafkaProducer.class);
     
     private final Map<String, KafkaProducer<String, String>> producers;
     private final AtomicLong totalMessagesSent;
     private final AtomicLong totalBytesSent;
     private final Properties baseConfig;
     
-    public KafkaProducer() {
+    public AdvancedKafkaProducer() {
         this.producers = new ConcurrentHashMap<>();
         this.totalMessagesSent = new AtomicLong(0);
         this.totalBytesSent = new AtomicLong(0);
         this.baseConfig = KafkaConfig.createProducerConfig();
     }
     
-    public KafkaProducer(Properties customConfig) {
+    public AdvancedKafkaProducer(Properties customConfig) {
         this.producers = new ConcurrentHashMap<>();
         this.totalMessagesSent = new AtomicLong(0);
         this.totalBytesSent = new AtomicLong(0);
