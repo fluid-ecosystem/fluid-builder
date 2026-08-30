@@ -32,7 +32,21 @@ public class Fluid {
     
     private final AdvancedKafkaProducer producer;
     private final AdvancedKafkaConsumer consumer;
-    private final TopicManager topicManager;
+    /**
+     * Opened on first use rather than at construction.
+     *
+     * <p>{@link TopicManager} creates an {@code AdminClient} in its
+     * constructor, which starts a connection-retry thread immediately. Only
+     * {@link EnhancedKafkaListener} methods create topics, so a service using
+     * just {@link KafkaListener} would otherwise pay for a client it never
+     * touches — and log its connection failures indefinitely.
+     *
+     * <p>Guarded by {@link #topicManagerLock}; read via
+     * {@link #topicManager()}.
+     */
+    private volatile TopicManager topicManager;
+
+    private final Object topicManagerLock = new Object();
     private final ExecutorService serviceExecutor;
     private final CountDownLatch shutdownLatch;
     private volatile boolean isRunning = false;
@@ -40,7 +54,6 @@ public class Fluid {
     public Fluid() {
         this.producer = new AdvancedKafkaProducer();
         this.consumer = new AdvancedKafkaConsumer();
-        this.topicManager = new TopicManager();
         this.serviceExecutor = Executors.newCachedThreadPool();
         this.shutdownLatch = new CountDownLatch(1);
     }
@@ -308,7 +321,7 @@ public class Fluid {
                 listener.replicationFactor()
             );
             
-            topicManager.createTopic(topic);
+            topicManager().createTopic(topic);
             logger.info("Created topic '{}' with {} partitions and replication factor {}", 
                        listener.topic(), listener.partitions(), listener.replicationFactor());
                        
@@ -338,6 +351,24 @@ public class Fluid {
         }
         
         return instances;
+    }
+    
+    /**
+     * Returns the topic manager, opening it on first call.
+     */
+    private TopicManager topicManager() {
+        TopicManager local = topicManager;
+        if (local == null) {
+            synchronized (topicManagerLock) {
+                local = topicManager;
+                if (local == null) {
+                    logger.debug("Opening AdminClient for topic management");
+                    local = new TopicManager();
+                    topicManager = local;
+                }
+            }
+        }
+        return local;
     }
     
     /**
@@ -378,6 +409,12 @@ public class Fluid {
             producer.shutdown();
             consumer.shutdown();
             KafkaProcessor.shutdown();
+
+            TopicManager openTopicManager = topicManager;
+            if (openTopicManager != null) {
+                openTopicManager.close();
+            }
+
             serviceExecutor.shutdown();
             
             if (!serviceExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
