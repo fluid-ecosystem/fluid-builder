@@ -4,5 +4,10 @@ import java.lang.annotation.*;
 @Target(ElementType.METHOD)
 public @interface ShortCircuit {
     String topic();
-    String bootstrapServers() default "kafka:9092";
+    /**
+     * Broker the error is published to.
+     *
+     * <p>Blank means inherit {@link KafkaConfig#defaultBootstrapServers()}.
+     */
+    String bootstrapServers() default "";
 }

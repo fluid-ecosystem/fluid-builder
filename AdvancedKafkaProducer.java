@@ -48,7 +48,7 @@ public class AdvancedKafkaProducer {
      * Send message with advanced features
      */
     public CompletableFuture<RecordMetadata> sendMessage(String topic, String key, String message) {
-        return sendMessage(KafkaConfig.DEFAULT_BOOTSTRAP_SERVERS, topic, key, message, null);
+        return sendMessage(KafkaConfig.defaultBootstrapServers(), topic, key, message, null);
     }
     
     public CompletableFuture<RecordMetadata> sendMessage(String topic, String message) {
@@ -59,7 +59,7 @@ public class AdvancedKafkaProducer {
      * Send message with custom partition
      */
     public CompletableFuture<RecordMetadata> sendMessage(String topic, String key, String message, Integer partition) {
-        return sendMessage(KafkaConfig.DEFAULT_BOOTSTRAP_SERVERS, topic, key, message, partition);
+        return sendMessage(KafkaConfig.defaultBootstrapServers(), topic, key, message, partition);
     }
     
     public CompletableFuture<RecordMetadata> sendMessage(String bootstrapServers, String topic, 
@@ -105,7 +105,7 @@ public class AdvancedKafkaProducer {
      * Batch send messages for improved throughput
      */
     public CompletableFuture<Void> sendBatch(String topic, java.util.List<String> messages) {
-        return sendBatch(KafkaConfig.DEFAULT_BOOTSTRAP_SERVERS, topic, messages);
+        return sendBatch(KafkaConfig.defaultBootstrapServers(), topic, messages);
     }
     
     public CompletableFuture<Void> sendBatch(String bootstrapServers, String topic, 
@@ -142,7 +142,7 @@ public class AdvancedKafkaProducer {
      */
     public CompletableFuture<RecordMetadata> sendMessageWithHeaders(String topic, String key, String message, 
                                                                    Map<String, Object> headers) {
-        return sendMessageWithHeaders(KafkaConfig.DEFAULT_BOOTSTRAP_SERVERS, topic, key, message, headers);
+        return sendMessageWithHeaders(KafkaConfig.defaultBootstrapServers(), topic, key, message, headers);
     }
     
     public CompletableFuture<RecordMetadata> sendMessageWithHeaders(String bootstrapServers, String topic, 

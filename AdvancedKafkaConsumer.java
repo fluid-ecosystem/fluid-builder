@@ -57,7 +57,7 @@ public class AdvancedKafkaConsumer {
     }
     
     public void subscribe(String groupId, List<String> topics, MessageHandler messageHandler) {
-        subscribe(KafkaConfig.DEFAULT_BOOTSTRAP_SERVERS, groupId, topics, messageHandler);
+        subscribe(KafkaConfig.defaultBootstrapServers(), groupId, topics, messageHandler);
     }
     
     public void subscribe(String bootstrapServers, String groupId, List<String> topics, MessageHandler messageHandler) {
@@ -86,7 +86,7 @@ public class AdvancedKafkaConsumer {
      * Subscribe to specific partitions
      */
     public void subscribeToPartitions(String groupId, Map<TopicPartition, Long> partitionOffsets, MessageHandler messageHandler) {
-        subscribeToPartitions(KafkaConfig.DEFAULT_BOOTSTRAP_SERVERS, groupId, partitionOffsets, messageHandler);
+        subscribeToPartitions(KafkaConfig.defaultBootstrapServers(), groupId, partitionOffsets, messageHandler);
     }
     
     public void subscribeToPartitions(String bootstrapServers, String groupId, 
@@ -111,7 +111,7 @@ public class AdvancedKafkaConsumer {
      * Batch consume messages for improved throughput
      */
     public void consumeBatch(String groupId, String topic, BatchMessageHandler batchHandler) {
-        consumeBatch(KafkaConfig.DEFAULT_BOOTSTRAP_SERVERS, groupId, topic, batchHandler);
+        consumeBatch(KafkaConfig.defaultBootstrapServers(), groupId, topic, batchHandler);
     }
     
     public void consumeBatch(String bootstrapServers, String groupId, String topic, BatchMessageHandler batchHandler) {
@@ -157,7 +157,7 @@ public class AdvancedKafkaConsumer {
      * Manual offset management
      */
     public void consumeWithManualOffset(String groupId, String topic, ManualOffsetHandler offsetHandler) {
-        consumeWithManualOffset(KafkaConfig.DEFAULT_BOOTSTRAP_SERVERS, groupId, topic, offsetHandler);
+        consumeWithManualOffset(KafkaConfig.defaultBootstrapServers(), groupId, topic, offsetHandler);
     }
     
     public void consumeWithManualOffset(String bootstrapServers, String groupId, String topic, ManualOffsetHandler offsetHandler) {

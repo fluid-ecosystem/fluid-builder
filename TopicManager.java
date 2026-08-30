@@ -25,7 +25,7 @@ public class TopicManager {
     
     public TopicManager() {
         Properties config = new Properties();
-        config.put("bootstrap.servers", KafkaConfig.DEFAULT_BOOTSTRAP_SERVERS);
+        config.put("bootstrap.servers", KafkaConfig.defaultBootstrapServers());
         this.adminClient = AdminClient.create(config);
     }
     

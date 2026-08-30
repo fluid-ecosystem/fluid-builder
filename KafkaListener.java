@@ -5,6 +5,12 @@ import java.lang.annotation.*;
 public @interface KafkaListener {
     String topic();
     String groupId();
-    // String bootstrapServers() default "localhost:9092";
-    String bootstrapServers() default "kafka:9092";
+    /**
+     * Broker address for this listener.
+     *
+     * <p>Blank means inherit {@link KafkaConfig#defaultBootstrapServers()},
+     * which reads {@code BOOTSTRAP_SERVERS} from the environment. Set this
+     * only to pin one listener to a different broker.
+     */
+    String bootstrapServers() default "";
 }
