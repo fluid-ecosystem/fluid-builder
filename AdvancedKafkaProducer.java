@@ -23,7 +23,7 @@ public class AdvancedKafkaProducer {
     
     private static final Logger logger = LoggerFactory.getLogger(AdvancedKafkaProducer.class);
     
-    private final Map<String, KafkaProducer<String, String>> producers;
+    private final Map<String, Producer<String, String>> producers;
     private final AtomicLong totalMessagesSent;
     private final AtomicLong totalBytesSent;
     private final Properties baseConfig;
@@ -64,7 +64,7 @@ public class AdvancedKafkaProducer {
     
     public CompletableFuture<RecordMetadata> sendMessage(String bootstrapServers, String topic, 
                                                          String key, String message, Integer partition) {
-        KafkaProducer<String, String> producer = getOrCreateProducer(bootstrapServers);
+        Producer<String, String> producer = getOrCreateProducer(bootstrapServers);
         
         CompletableFuture<RecordMetadata> future = new CompletableFuture<>();
         
@@ -114,7 +114,7 @@ public class AdvancedKafkaProducer {
             return CompletableFuture.completedFuture(null);
         }
         
-        KafkaProducer<String, String> producer = getOrCreateProducer(bootstrapServers);
+        Producer<String, String> producer = getOrCreateProducer(bootstrapServers);
         
         CompletableFuture<Void> future = new CompletableFuture<>();
 
@@ -148,7 +148,7 @@ public class AdvancedKafkaProducer {
     public CompletableFuture<RecordMetadata> sendMessageWithHeaders(String bootstrapServers, String topic, 
                                                                     String key, String message, 
                                                                     Map<String, Object> headers) {
-        KafkaProducer<String, String> producer = getOrCreateProducer(bootstrapServers);
+        Producer<String, String> producer = getOrCreateProducer(bootstrapServers);
         
         CompletableFuture<RecordMetadata> future = new CompletableFuture<>();
         
@@ -191,17 +191,25 @@ public class AdvancedKafkaProducer {
      * so every entry was built from {@link #baseConfig} and therefore pointed
      * at the default broker regardless of what the caller asked for.
      */
-    private KafkaProducer<String, String> getOrCreateProducer(String bootstrapServers) {
+    private Producer<String, String> getOrCreateProducer(String bootstrapServers) {
         String resolved = KafkaConfig.resolveBootstrapServers(bootstrapServers);
         return producers.computeIfAbsent(resolved, servers -> {
             logger.info("Creating new Kafka producer for bootstrap servers: {}", servers);
             Properties config = new Properties();
             config.putAll(baseConfig);
             config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, servers);
-            return new KafkaProducer<>(config);
+            return newProducer(config);
         });
     }
     
+    /**
+     * Creates the underlying client. Overridable so the send paths can be
+     * driven by a {@code MockProducer} without a live broker.
+     */
+    protected Producer<String, String> newProducer(Properties config) {
+        return new KafkaProducer<>(config);
+    }
+
     /**
      * Get producer metrics for monitoring
      */
@@ -217,7 +225,7 @@ public class AdvancedKafkaProducer {
      * Flush all producers
      */
     public void flush() {
-        producers.values().forEach(KafkaProducer::flush);
+        producers.values().forEach(Producer::flush);
         logger.info("Flushed all producers");
     }
     
