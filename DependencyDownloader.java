@@ -6,7 +6,9 @@ import org.w3c.dom.*;
 import java.io.*;
 import java.net.*;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 
 public class DependencyDownloader {
@@ -101,28 +103,57 @@ public class DependencyDownloader {
         return finalDependencies;
     }
 
-    public static void downloadDependency(Dependency dep, String outputDir) {
+    /**
+     * Downloads one dependency into {@code outputDir}.
+     *
+     * @return true if the jar is present afterwards
+     */
+    public static boolean downloadDependency(Dependency dep, String outputDir) {
+        String jarName = dep.artifactId + "-" + dep.version + ".jar";
+        Path target = Paths.get(outputDir, jarName);
+
         try {
             Files.createDirectories(Paths.get(outputDir));
+
+            if (Files.exists(target)) {
+                System.out.println(jarName + " already present, skipping.");
+                return true;
+            }
+
             String path = dep.groupId.replace('.', '/') + "/" + dep.artifactId + "/" + dep.version;
-            String jarName = dep.artifactId + "-" + dep.version + ".jar";
             String url = "https://repo.maven.apache.org/maven2/" + path + "/" + jarName;
             System.out.println("Downloading " + jarName + " from " + url);
 
-            HttpURLConnection conn = (HttpURLConnection) new URL(url).openConnection();
+            // URI.create also validates, which `new URL(String)` did not. The
+            // string is assembled from pom coordinates, so a malformed
+            // groupId should fail here rather than as a mystery 404.
+            HttpURLConnection conn =
+                (HttpURLConnection) URI.create(url).toURL().openConnection();
             conn.setRequestMethod("GET");
+            conn.setConnectTimeout(15_000);
+            conn.setReadTimeout(60_000);
 
-            if (conn.getResponseCode() == 200) {
-                InputStream in = conn.getInputStream();
-                Files.copy(in, Paths.get(outputDir, jarName));
-                in.close();
-                System.out.println(jarName + " downloaded successfully.");
-            } else {
-                System.out.println("Failed to download " + jarName);
+            int status = conn.getResponseCode();
+            if (status != 200) {
+                System.err.println("Failed to download " + jarName + ": HTTP " + status);
+                return false;
             }
 
-        } catch (IOException e) {
-            System.err.println("Error downloading dependency: " + e.getMessage());
+            // Download beside the target and move into place, so an
+            // interrupted transfer cannot leave a truncated jar that later
+            // surfaces as an unreadable-class error.
+            Path partial = Paths.get(outputDir, jarName + ".part");
+            try (InputStream in = conn.getInputStream()) {
+                Files.copy(in, partial, StandardCopyOption.REPLACE_EXISTING);
+            }
+            Files.move(partial, target, StandardCopyOption.REPLACE_EXISTING);
+
+            System.out.println(jarName + " downloaded successfully.");
+            return true;
+
+        } catch (IOException | IllegalArgumentException e) {
+            System.err.println("Error downloading " + jarName + ": " + e.getMessage());
+            return false;
         }
     }
 
@@ -130,12 +161,25 @@ public class DependencyDownloader {
         List<Dependency> pomDependencies = readPomFile(pomFile);
         List<Dependency> allDependencies = addMissingMinimalDeps(pomDependencies);
 
+        List<String> failed = new ArrayList<>();
+
         for (Dependency dep : allDependencies) {
             if (dep.groupId != null && dep.artifactId != null && dep.version != null) {
-                downloadDependency(dep, outputDir);
+                if (!downloadDependency(dep, outputDir)) {
+                    failed.add(dep.toString());
+                }
             } else {
-                System.out.println("Missing information for dependency: " + dep);
+                System.err.println("Missing information for dependency: " + dep);
+                failed.add(String.valueOf(dep));
             }
+        }
+
+        if (!failed.isEmpty()) {
+            // Continuing would produce a partial `lib/`, and the real symptom
+            // would arrive much later as NoClassDefFoundError with nothing
+            // pointing back to the download.
+            throw new IllegalStateException(
+                "Could not download " + failed.size() + " dependency(ies): " + failed);
         }
     }
 
