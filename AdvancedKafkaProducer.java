@@ -3,6 +3,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
@@ -116,14 +117,16 @@ public class AdvancedKafkaProducer {
         KafkaProducer<String, String> producer = getOrCreateProducer(bootstrapServers);
         
         CompletableFuture<Void> future = new CompletableFuture<>();
-        CompletableFuture<RecordMetadata>[] futures = new CompletableFuture[messages.size()];
-        
-        for (int i = 0; i < messages.size(); i++) {
-            final int index = i;
-            futures[i] = sendMessage(bootstrapServers, topic, null, messages.get(i));
-        }
-        
-        CompletableFuture.allOf(futures).whenComplete((result, exception) -> {
+
+        // The four-argument overload is (topic, key, message, partition), so
+        // the previous call bound `message` to `partition`. Use the explicit
+        // bootstrap-servers form with no partition preference.
+        List<CompletableFuture<RecordMetadata>> futures = messages.stream()
+            .map(message -> sendMessage(bootstrapServers, topic, null, message, null))
+            .toList();
+
+        CompletableFuture.allOf(futures.toArray(CompletableFuture<?>[]::new))
+            .whenComplete((result, exception) -> {
             if (exception != null) {
                 future.completeExceptionally(exception);
             } else {

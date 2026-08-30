@@ -22,7 +22,22 @@ public class AdvancedKafkaConsumer {
     
     private static final Logger logger = LoggerFactory.getLogger(AdvancedKafkaConsumer.class);
     
-    private final Map<String, KafkaConsumer<String, String>> consumers;
+    /**
+     * A consumer paired with the configuration it was built from.
+     *
+     * <p>{@code KafkaConsumer} exposes no accessor for its own settings, so
+     * the resolved {@link Properties} are retained here rather than queried
+     * back off the client.
+     */
+    private record ManagedConsumer(KafkaConsumer<String, String> consumer, Properties config) {
+
+        boolean isAutoCommitEnabled() {
+            return Boolean.parseBoolean(
+                config.getProperty(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true"));
+        }
+    }
+
+    private final Map<String, ManagedConsumer> consumers;
     private final AtomicLong totalMessagesConsumed;
     private final AtomicLong totalBytesConsumed;
     private final ExecutorService messageProcessorExecutor;
@@ -46,7 +61,8 @@ public class AdvancedKafkaConsumer {
     }
     
     public void subscribe(String bootstrapServers, String groupId, List<String> topics, MessageHandler messageHandler) {
-        KafkaConsumer<String, String> consumer = getOrCreateConsumer(bootstrapServers, groupId);
+        ManagedConsumer managed = getOrCreateConsumer(bootstrapServers, groupId);
+        KafkaConsumer<String, String> consumer = managed.consumer();
         
         consumer.subscribe(topics, new ConsumerRebalanceListener() {
             @Override
@@ -63,7 +79,7 @@ public class AdvancedKafkaConsumer {
         });
         
         // Start consuming messages
-        startConsuming(consumer, messageHandler);
+        startConsuming(managed, messageHandler);
     }
     
     /**
@@ -75,7 +91,8 @@ public class AdvancedKafkaConsumer {
     
     public void subscribeToPartitions(String bootstrapServers, String groupId, 
                                     Map<TopicPartition, Long> partitionOffsets, MessageHandler messageHandler) {
-        KafkaConsumer<String, String> consumer = getOrCreateConsumer(bootstrapServers, groupId);
+        ManagedConsumer managed = getOrCreateConsumer(bootstrapServers, groupId);
+        KafkaConsumer<String, String> consumer = managed.consumer();
         
         Set<TopicPartition> topicPartitions = partitionOffsets.keySet();
         consumer.assign(topicPartitions);
@@ -87,7 +104,7 @@ public class AdvancedKafkaConsumer {
         });
         
         // Start consuming messages
-        startConsuming(consumer, messageHandler);
+        startConsuming(managed, messageHandler);
     }
     
     /**
@@ -98,7 +115,7 @@ public class AdvancedKafkaConsumer {
     }
     
     public void consumeBatch(String bootstrapServers, String groupId, String topic, BatchMessageHandler batchHandler) {
-        KafkaConsumer<String, String> consumer = getOrCreateConsumer(bootstrapServers, groupId);
+        KafkaConsumer<String, String> consumer = getOrCreateConsumer(bootstrapServers, groupId).consumer();
         consumer.subscribe(Collections.singletonList(topic));
         
         messageProcessorExecutor.submit(() -> {
@@ -144,7 +161,7 @@ public class AdvancedKafkaConsumer {
     }
     
     public void consumeWithManualOffset(String bootstrapServers, String groupId, String topic, ManualOffsetHandler offsetHandler) {
-        KafkaConsumer<String, String> consumer = getOrCreateConsumer(bootstrapServers, groupId);
+        KafkaConsumer<String, String> consumer = getOrCreateConsumer(bootstrapServers, groupId).consumer();
         consumer.subscribe(Collections.singletonList(topic));
         
         messageProcessorExecutor.submit(() -> {
@@ -189,7 +206,8 @@ public class AdvancedKafkaConsumer {
         });
     }
     
-    private void startConsuming(KafkaConsumer<String, String> consumer, MessageHandler messageHandler) {
+    private void startConsuming(ManagedConsumer managed, MessageHandler messageHandler) {
+        KafkaConsumer<String, String> consumer = managed.consumer();
         messageProcessorExecutor.submit(() -> {
             try {
                 while (!Thread.currentThread().isInterrupted()) {
@@ -211,7 +229,7 @@ public class AdvancedKafkaConsumer {
                     }
                     
                     // Auto-commit if enabled in consumer config
-                    if (Boolean.parseBoolean(consumer.config().getProperty("enable.auto.commit", "true"))) {
+                    if (managed.isAutoCommitEnabled()) {
                         consumer.commitAsync();
                     }
                 }
@@ -223,13 +241,13 @@ public class AdvancedKafkaConsumer {
         });
     }
     
-    private KafkaConsumer<String, String> getOrCreateConsumer(String bootstrapServers, String groupId) {
+    private ManagedConsumer getOrCreateConsumer(String bootstrapServers, String groupId) {
         String key = bootstrapServers + ":" + groupId;
         return consumers.computeIfAbsent(key, servers -> {
             logger.info("Creating new Kafka consumer for group {} on servers {}", groupId, bootstrapServers);
             Properties config = KafkaConfig.createConsumerConfig(groupId);
             config.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
-            return new KafkaConsumer<>(config);
+            return new ManagedConsumer(new KafkaConsumer<>(config), config);
         });
     }
     
@@ -260,8 +278,9 @@ public class AdvancedKafkaConsumer {
             Thread.currentThread().interrupt();
         }
         
-        consumers.values().forEach(consumer -> {
+        consumers.values().forEach(managed -> {
             try {
+                KafkaConsumer<String, String> consumer = managed.consumer();
                 consumer.wakeup(); // Wake up any waiting poll
                 consumer.close();
             } catch (Exception e) {
@@ -289,9 +308,11 @@ public class AdvancedKafkaConsumer {
     }
     
     /**
-     * Functional interface for manual offset handling
+     * Callback pair for manual offset handling.
+     *
+     * <p>Not a functional interface: it declares two abstract methods, so it
+     * cannot be written as a lambda.
      */
-    @FunctionalInterface
     public interface ManualOffsetHandler {
         void handleMessage(ConsumerRecord<String, String> record) throws Exception;
         void handleError(ConsumerRecord<String, String> record, Exception error);
