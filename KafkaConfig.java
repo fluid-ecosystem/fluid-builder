@@ -36,6 +36,30 @@ public class KafkaConfig {
     public static final int DEFAULT_PARTITIONS = 3;
     public static final short DEFAULT_REPLICATION_FACTOR = 1;
     
+    /** Environment variable consulted for the producer compression codec. */
+    public static final String COMPRESSION_TYPE_ENV = "KAFKA_COMPRESSION_TYPE";
+
+    /**
+     * Compression used when {@link #COMPRESSION_TYPE_ENV} is unset.
+     *
+     * <p>{@code gzip} is the only compressing codec that works with the
+     * dependency set this framework downloads. {@code snappy}, {@code lz4}
+     * and {@code zstd} all delegate to third-party libraries that
+     * {@code kafka-clients} does not bundle:
+     *
+     * <pre>
+     *   snappy -> org.xerial.snappy.SnappyOutputStream
+     *   lz4    -> net.jpountz.lz4.LZ4Factory
+     *   zstd   -> com.github.luben.zstd.ZstdOutputStreamNoFinalizer
+     * </pre>
+     *
+     * <p>Any of them can be selected by adding the matching jar to the
+     * dependency list; {@link #validateCompressionType(String)} checks the
+     * codec is usable at startup rather than letting it fail deep in the
+     * send path.
+     */
+    public static final String FALLBACK_COMPRESSION_TYPE = "gzip";
+
     // Performance Configuration
     public static final int BATCH_SIZE = 32768; // 32KB
     public static final int LINGER_MS = 5;
@@ -78,6 +102,51 @@ public class KafkaConfig {
     }
 
     /**
+     * Resolves the producer compression codec from the environment, falling
+     * back to {@link #FALLBACK_COMPRESSION_TYPE}.
+     */
+    public static String defaultCompressionType() {
+        String configured = System.getenv(COMPRESSION_TYPE_ENV);
+        return (configured == null || configured.isBlank())
+            ? FALLBACK_COMPRESSION_TYPE
+            : configured.trim().toLowerCase();
+    }
+
+    /**
+     * Fails fast if the chosen codec's backing library is absent.
+     *
+     * <p>Without this the codec resolves lazily inside the producer's record
+     * accumulator, surfacing as a {@code ClassNotFoundException} on the send
+     * path long after startup, on a background thread, with no indication
+     * that a dependency is missing.
+     *
+     * @param compressionType codec name as understood by Kafka
+     * @throws IllegalStateException if the codec cannot be used
+     */
+    public static void validateCompressionType(String compressionType) {
+        String required = switch (compressionType) {
+            case "snappy" -> "org.xerial.snappy.SnappyOutputStream";
+            case "lz4"    -> "net.jpountz.lz4.LZ4Factory";
+            case "zstd"   -> "com.github.luben.zstd.ZstdOutputStreamNoFinalizer";
+            default       -> null;   // none and gzip need nothing extra
+        };
+
+        if (required == null) {
+            return;
+        }
+
+        try {
+            Class.forName(required);
+        } catch (ClassNotFoundException e) {
+            throw new IllegalStateException(
+                "compression.type=" + compressionType + " requires " + required
+                    + ", which is not on the classpath. Add the library to the "
+                    + "dependency list, or set " + COMPRESSION_TYPE_ENV
+                    + " to gzip or none.", e);
+        }
+    }
+
+    /**
      * Creates an optimized Producer configuration
      */
     public static Properties createProducerConfig() {
@@ -100,7 +169,9 @@ public class KafkaConfig {
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         
         // Compression for better throughput
-        props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy");
+        String compressionType = defaultCompressionType();
+        validateCompressionType(compressionType);
+        props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, compressionType);
         
         // Delivery timeout
         props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 120000);
@@ -157,7 +228,7 @@ public class KafkaConfig {
         // Configure topic properties
         topic.configs(Map.of(
             "cleanup.policy", "delete",           // Delete old messages
-            "compression.type", "snappy",         // Compress messages
+            "compression.type", defaultCompressionType(),
             "delete.retention.ms", "86400000",    // Keep deleted records for 1 day
             "file.delete.delay.ms", "60000",      // Wait 1 minute before deleting files
             "flush.ms", "1000",                   // Flush every second
