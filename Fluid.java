@@ -12,6 +12,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Enhanced Fluid Framework with Advanced Kafka Features
@@ -50,6 +51,7 @@ public class Fluid {
     private final ExecutorService serviceExecutor;
     private final CountDownLatch shutdownLatch;
     private volatile boolean isRunning = false;
+    private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
     
     public Fluid() {
         this.producer = new AdvancedKafkaProducer();
@@ -405,35 +407,67 @@ public class Fluid {
      * Graceful shutdown
      */
     public void shutdown() {
-        if (!isRunning) return;
-        
+        // Once-only. The previous `if (!isRunning) return` guard raced: two
+        // callers could both observe true and run the body twice, while a
+        // failure before `isRunning = true` made the JVM hook a no-op and
+        // left the latch uncounted.
+        if (!shuttingDown.compareAndSet(false, true)) {
+            return;
+        }
+
         isRunning = false;
         logger.info("Initiating graceful shutdown...");
-        
+
         try {
-            producer.shutdown();
-            consumer.shutdown();
-            KafkaProcessor.shutdown();
+            // Each step is isolated. Previously one throwing component
+            // skipped every remaining step and, because the countdown sat
+            // at the end of the same try, left `start()` blocked on the
+            // latch forever.
+            closeQuietly("producer", producer::shutdown);
+            closeQuietly("consumer", consumer::shutdown);
+            closeQuietly("standard listeners", KafkaProcessor::shutdown);
 
             TopicManager openTopicManager = topicManager;
             if (openTopicManager != null) {
-                openTopicManager.close();
+                closeQuietly("topic manager", openTopicManager::close);
             }
 
-            serviceExecutor.shutdown();
-            
-            if (!serviceExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
-                serviceExecutor.shutdownNow();
-            }
-            
-            shutdownLatch.countDown();
+            closeQuietly("service executor", () -> {
+                serviceExecutor.shutdown();
+                if (!serviceExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+                    logger.warn("Service executor did not stop within 30s; forcing shutdown");
+                    serviceExecutor.shutdownNow();
+                }
+            });
+
             logger.info("✅ Enhanced Fluid Framework shut down successfully");
-            
-        } catch (Exception e) {
-            logger.error("Error during shutdown: {}", e.getMessage(), e);
+        } finally {
+            // Unconditional: `start()` is parked on this latch, so failing to
+            // count it down hangs the process with no diagnostic.
+            shutdownLatch.countDown();
         }
     }
-    
+
+    /**
+     * Runs one shutdown step, logging rather than propagating failure, so a
+     * single misbehaving component cannot strand the rest.
+     */
+    private void closeQuietly(String what, ShutdownStep step) {
+        try {
+            step.run();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.warn("Interrupted while shutting down {}", what);
+        } catch (Exception e) {
+            logger.error("Error shutting down {}: {}", what, e.getMessage(), e);
+        }
+    }
+
+    @FunctionalInterface
+    private interface ShutdownStep {
+        void run() throws Exception;
+    }
+
     public static void main(String[] args) throws Exception {
         Fluid fluid = new Fluid();
         fluid.start(args);
