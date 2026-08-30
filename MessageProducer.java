@@ -12,30 +12,30 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Advanced Kafka Producer with enhanced features:
+ * Kafka producer supporting:
  * - Custom partitioning strategies
  * - Batch processing with compression
  * - Comprehensive error handling and retries
  * - Performance monitoring and metrics
  * - Dead letter queue support
  */
-public class AdvancedKafkaProducer {
+public class MessageProducer {
     
-    private static final Logger logger = LoggerFactory.getLogger(AdvancedKafkaProducer.class);
+    private static final Logger logger = LoggerFactory.getLogger(MessageProducer.class);
     
     private final Map<String, Producer<String, String>> producers;
     private final AtomicLong totalMessagesSent;
     private final AtomicLong totalBytesSent;
     private final Properties baseConfig;
     
-    public AdvancedKafkaProducer() {
+    public MessageProducer() {
         this.producers = new ConcurrentHashMap<>();
         this.totalMessagesSent = new AtomicLong(0);
         this.totalBytesSent = new AtomicLong(0);
         this.baseConfig = KafkaConfig.createProducerConfig();
     }
     
-    public AdvancedKafkaProducer(Properties customConfig) {
+    public MessageProducer(Properties customConfig) {
         this.producers = new ConcurrentHashMap<>();
         this.totalMessagesSent = new AtomicLong(0);
         this.totalBytesSent = new AtomicLong(0);
@@ -45,7 +45,7 @@ public class AdvancedKafkaProducer {
     }
     
     /**
-     * Send message with advanced features
+     * Send a message
      */
     public CompletableFuture<RecordMetadata> sendMessage(String topic, String key, String message) {
         return sendMessage(KafkaConfig.defaultBootstrapServers(), topic, key, message, null);

@@ -10,9 +10,9 @@ import java.util.Properties;
 import java.util.concurrent.ExecutionException;
 
 /**
- * Advanced Kafka Configuration Manager
+ * Central Kafka configuration.
  * Provides production-ready Kafka configurations with performance optimizations,
- * security settings, and advanced features.
+ * security settings and performance tuning.
  */
 public class KafkaConfig {
     
@@ -227,9 +227,9 @@ public class KafkaConfig {
     }
     
     /**
-     * Creates topics with advanced configuration
+     * Creates a topic carrying the framework's standard topic configuration
      */
-    public static NewTopic createAdvancedTopic(String topicName, int partitions, short replicationFactor) {
+    public static NewTopic createConfiguredTopic(String topicName, int partitions, short replicationFactor) {
         NewTopic topic = new NewTopic(topicName, partitions, replicationFactor);
         
         // Configure topic properties

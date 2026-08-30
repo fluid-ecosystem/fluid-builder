@@ -1,6 +1,3 @@
-package com.fluid.enhanced.examples;
-
-import com.fluid.enhanced.producer.KafkaProducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,25 +6,26 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Advanced Message Sender demonstrating enhanced Kafka producer features
+ * Demonstrates the producer API: keys, explicit partitions, batches,
+ * headers and error handling.
  */
-public class AdvancedMessageSender {
+public class MessageSender {
     
-    private static final Logger logger = LoggerFactory.getLogger(AdvancedMessageSender.class);
+    private static final Logger logger = LoggerFactory.getLogger(MessageSender.class);
     
-    private final KafkaProducer producer;
+    private final MessageProducer producer;
     private final Random random;
     
-    public AdvancedMessageSender() {
-        this.producer = new KafkaProducer();
+    public MessageSender() {
+        this.producer = new MessageProducer();
         this.random = new Random();
     }
     
     public void run() throws Exception {
-        logger.info("🚀 Starting Advanced Message Sender");
+        logger.info("🚀 Starting Message Sender");
         
         try {
-            // Demonstrate various advanced features
+            // Walk through each capability in turn
             demonstrateBasicMessaging();
             demonstrateKeyBasedPartitioning();
             demonstrateCustomPartitioning();
@@ -139,7 +137,7 @@ public class AdvancedMessageSender {
         Map<String, Object> headers = new HashMap<>();
         headers.put("message-type", "notification");
         headers.put("priority", "high");
-        headers.put("source", "advanced-sender");
+        headers.put("source", "message-sender");
         headers.put("timestamp", System.currentTimeMillis());
         
         for (int i = 1; i <= 5; i++) {
@@ -201,7 +199,7 @@ public class AdvancedMessageSender {
     }
     
     public static void main(String[] args) throws Exception {
-        AdvancedMessageSender sender = new AdvancedMessageSender();
+        MessageSender sender = new MessageSender();
         sender.run();
     }
 }

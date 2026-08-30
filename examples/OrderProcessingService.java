@@ -1,7 +1,3 @@
-package com.fluid.enhanced.examples;
-
-import com.fluid.enhanced.annotations.EnhancedKafkaListener;
-import com.fluid.enhanced.annotations.PartitionStrategy;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,7 +8,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Advanced Example Service demonstrating enhanced Fluid Framework features
+ * Demonstrates @KafkaSubscription: batching, dead letter routing, custom
+ * partitioning, retries, metrics and message enrichment.
  * 
  * Features demonstrated:
  * - Batch processing
@@ -23,9 +20,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * - Message enrichment
  */
 @PartitionStrategy(PartitionStrategy.Strategy.KEY_BASED)
-public class AdvancedOrderProcessingService {
+public class OrderProcessingService {
     
-    private static final Logger logger = LoggerFactory.getLogger(AdvancedOrderProcessingService.class);
+    private static final Logger logger = LoggerFactory.getLogger(OrderProcessingService.class);
     
     // Metrics tracking
     private final AtomicLong totalOrdersProcessed = new AtomicLong(0);
@@ -34,11 +31,11 @@ public class AdvancedOrderProcessingService {
     private final Map<String, Long> errorTypeCounts = new ConcurrentHashMap<>();
     
     /**
-     * Basic order processing with advanced features
+     * Order processing with dead letter routing and retries
      */
-    @EnhancedKafkaListener(
-        topic = "advanced-orders",
-        groupId = "advanced-order-processors",
+    @KafkaSubscription(
+        topic = "orders",
+        groupId = "order-processors",
         bootstrapServers = "localhost:9092",
         partitions = 5,
         replicationFactor = 1,
@@ -82,7 +79,7 @@ public class AdvancedOrderProcessingService {
     /**
      * Batch processing for high-throughput scenarios
      */
-    @EnhancedKafkaListener(
+    @KafkaSubscription(
         topic = "batch-orders",
         groupId = "batch-order-processors",
         bootstrapServers = "localhost:9092",
@@ -131,7 +128,7 @@ public class AdvancedOrderProcessingService {
     /**
      * High-priority order processing with custom partitioning
      */
-    @EnhancedKafkaListener(
+    @KafkaSubscription(
         topic = "priority-orders",
         groupId = "priority-order-processors",
         bootstrapServers = "localhost:9092",
@@ -152,7 +149,7 @@ public class AdvancedOrderProcessingService {
         try {
             Order order = parseOrder(value);
             
-            // Enhanced validation for priority orders
+            // Extra validation for priority orders
             validatePriorityOrder(order);
             
             // Process with priority logic
@@ -175,7 +172,7 @@ public class AdvancedOrderProcessingService {
     /**
      * Customer service events with custom message handling
      */
-    @EnhancedKafkaListener(
+    @KafkaSubscription(
         topic = "customer-events",
         groupId = "customer-service",
         bootstrapServers = "localhost:9092",
@@ -263,7 +260,7 @@ public class AdvancedOrderProcessingService {
     
     private void processPriorityOrderLogic(Order order) {
         logger.debug("Executing priority order logic for order {}", order.getId());
-        // Enhanced processing for priority orders
+        // Extra processing for priority orders
         processOrderLogic(order);
         
         // Additional priority-specific logic

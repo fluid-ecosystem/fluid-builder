@@ -15,7 +15,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
 
 /**
- * Advanced Topic Manager for Kafka
+ * Creates, inspects and configures Kafka topics.
  * Handles topic creation, configuration, and management
  */
 public class TopicManager {
@@ -156,7 +156,7 @@ public class TopicManager {
             return new TopicSpec(name, KafkaConfig.DEFAULT_PARTITIONS, KafkaConfig.DEFAULT_REPLICATION_FACTOR);
         }
         
-        public static TopicSpec advanced(String name, int partitions, short replicationFactor, Map<String, String> configs) {
+        public static TopicSpec configured(String name, int partitions, short replicationFactor, Map<String, String> configs) {
             return new TopicSpec(name, partitions, replicationFactor, configs);
         }
     }

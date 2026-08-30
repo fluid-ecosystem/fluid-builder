@@ -75,8 +75,11 @@ mvn dependency:tree | grep -E "compile|runtime"
 
 With no packages, every top-level class competes with every imported type.
 `KafkaProducer` and `KafkaConsumer` are the obvious traps — the framework's
-own classes are named `AdvancedKafkaProducer` and `AdvancedKafkaConsumer`
+own client wrappers are named `MessageProducer` and `MessageConsumer`
 precisely to stay clear of `org.apache.kafka.clients.*`.
+
+The same applies to annotations: `@KafkaListener` is Fluid's own, and shares
+its simple name with Spring's. `@KafkaSubscription` is the fuller form.
 
 ---
 

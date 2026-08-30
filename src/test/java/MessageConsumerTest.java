@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Ported from {@code com.fluid.enhanced.consumer.AdvancedKafkaConsumerTest}.
+ * Ported from the original packaged consumer suite.
  *
  * <p>The original only asserted that handlers could be constructed — it never
  * ran the poll loop, because doing so needed a broker. These drive the real
@@ -31,20 +31,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the delivery, ordering and commit behaviour is actually exercised.
  */
 @SuppressWarnings("unchecked")
-class AdvancedKafkaConsumerTest {
+class MessageConsumerTest {
 
     private static final TopicPartition P0 = new TopicPartition("t", 0);
     private static final TopicPartition P1 = new TopicPartition("t", 1);
 
     private MockConsumer<String, String> mock;
-    private AdvancedKafkaConsumer consumer;
+    private MessageConsumer consumer;
     private Properties lastConfig;
 
     @BeforeEach
     void setUp() {
         mock = new MockConsumer<>(OffsetResetStrategy.EARLIEST);
         mock.updateBeginningOffsets(Map.of(P0, 0L, P1, 0L));
-        consumer = new AdvancedKafkaConsumer() {
+        consumer = new MessageConsumer() {
             @Override
             protected Consumer<String, String> newConsumer(Properties config) {
                 lastConfig = config;
@@ -220,11 +220,11 @@ class AdvancedKafkaConsumerTest {
     @Test
     @DisplayName("the handler interfaces are usable as intended")
     void functionalInterfaces() {
-        AdvancedKafkaConsumer.MessageHandler single = r -> { };
-        AdvancedKafkaConsumer.BatchMessageHandler batch = rs -> { };
+        MessageConsumer.MessageHandler single = r -> { };
+        MessageConsumer.BatchMessageHandler batch = rs -> { };
         // ManualOffsetHandler declares two methods, so it is not a lambda type.
-        AdvancedKafkaConsumer.ManualOffsetHandler manual =
-            new AdvancedKafkaConsumer.ManualOffsetHandler() {
+        MessageConsumer.ManualOffsetHandler manual =
+            new MessageConsumer.ManualOffsetHandler() {
                 @Override public void handleMessage(ConsumerRecord<String, String> r) { }
                 @Override public void handleError(ConsumerRecord<String, String> r, Exception e) { }
             };

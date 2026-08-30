@@ -5,7 +5,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Advanced partition strategy annotation
+ * Declares how a service distributes messages across partitions.
  * Allows custom partitioning logic for message distribution
  */
 @Retention(RetentionPolicy.RUNTIME)

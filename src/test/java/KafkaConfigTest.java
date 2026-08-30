@@ -92,12 +92,12 @@ class KafkaConfigTest {
     }
 
     @Test
-    @DisplayName("an advanced topic carries configs, and its codec is a usable one")
-    void createsAdvancedTopic() {
+    @DisplayName("a configured topic carries configs, and its codec is a usable one")
+    void createsConfiguredTopic() {
         org.apache.kafka.clients.admin.NewTopic topic =
-            KafkaConfig.createAdvancedTopic("advanced-test-topic", 10, (short) 3);
+            KafkaConfig.createConfiguredTopic("configured-test-topic", 10, (short) 3);
 
-        assertEquals("advanced-test-topic", topic.name());
+        assertEquals("configured-test-topic", topic.name());
         assertEquals(10, topic.numPartitions());
         assertEquals((short) 3, topic.replicationFactor());
 

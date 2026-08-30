@@ -16,11 +16,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Enhanced Fluid Framework with Advanced Kafka Features
+ * The Fluid framework entry point.
  * 
  * Features:
  * - Automatic topic creation with custom configurations
- * - Advanced producer/consumer management
+ * - Producer and consumer management
  * - Batch processing capabilities
  * - Dead letter queue support
  * - Performance monitoring
@@ -32,14 +32,14 @@ public class Fluid {
     
     private static final Logger logger = LoggerFactory.getLogger(Fluid.class);
     
-    private final AdvancedKafkaProducer producer;
-    private final AdvancedKafkaConsumer consumer;
+    private final MessageProducer producer;
+    private final MessageConsumer consumer;
     /**
      * Opened on first use rather than at construction.
      *
      * <p>{@link TopicManager} creates an {@code AdminClient} in its
      * constructor, which starts a connection-retry thread immediately. Only
-     * {@link EnhancedKafkaListener} methods create topics, so a service using
+     * {@link KafkaSubscription} methods create topics, so a service using
      * just {@link KafkaListener} would otherwise pay for a client it never
      * touches — and log its connection failures indefinitely.
      *
@@ -55,17 +55,17 @@ public class Fluid {
     private final AtomicBoolean shuttingDown = new AtomicBoolean(false);
     
     public Fluid() {
-        this.producer = new AdvancedKafkaProducer();
-        this.consumer = new AdvancedKafkaConsumer();
+        this.producer = new MessageProducer();
+        this.consumer = new MessageConsumer();
         this.serviceExecutor = Executors.newCachedThreadPool();
         this.shutdownLatch = new CountDownLatch(1);
     }
     
     /**
-     * Start the enhanced Fluid framework
+     * Start the framework
      */
     public void start(String[] args) throws Exception {
-        logger.info("🌊 Enhanced Fluid Framework Starting 🌀");
+        logger.info("🌊 Fluid Framework Starting 🌀");
         
         // Discover service classes
         List<Object> services = discoverServiceClasses();
@@ -81,12 +81,12 @@ public class Fluid {
         
         // Setup graceful shutdown
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            logger.info("⛔ Shutting down Enhanced Fluid Framework...");
+            logger.info("⛔ Shutting down Fluid Framework...");
             shutdown();
         }));
         
         isRunning = true;
-        logger.info("🚀 Enhanced Fluid Framework started successfully!");
+        logger.info("🚀 Fluid Framework started successfully!");
         
         // Wait for shutdown signal
         shutdownLatch.await();
@@ -99,7 +99,7 @@ public class Fluid {
      * <ul>
      *   <li>{@link KafkaListener} — the original three-attribute API, driven
      *       by {@link KafkaProcessor}</li>
-     *   <li>{@link EnhancedKafkaListener} — the advanced API adding batching,
+     *   <li>{@link KafkaSubscription} — the fuller API adding batching,
      *       partitioning, consumer tuning and dead letter routing</li>
      * </ul>
      *
@@ -111,19 +111,19 @@ public class Fluid {
      */
     private void registerListeners(List<Object> services) {
         List<String> conflicts = new ArrayList<>();
-        List<Method> enhancedMethods = new ArrayList<>();
+        List<Method> subscriptionMethods = new ArrayList<>();
         int standardCount = 0;
 
         for (Object service : services) {
             for (Method method : service.getClass().getDeclaredMethods()) {
-                boolean enhanced = method.isAnnotationPresent(EnhancedKafkaListener.class);
+                boolean subscription = method.isAnnotationPresent(KafkaSubscription.class);
                 boolean standard = method.isAnnotationPresent(KafkaListener.class);
 
-                if (enhanced && standard) {
+                if (subscription && standard) {
                     conflicts.add(service.getClass().getSimpleName() + "." + method.getName());
-                } else if (enhanced) {
-                    enhancedMethods.add(method);
-                    processEnhancedListener(service, method);
+                } else if (subscription) {
+                    subscriptionMethods.add(method);
+                    processSubscription(service, method);
                 } else if (standard) {
                     standardCount++;
                 }
@@ -132,7 +132,7 @@ public class Fluid {
 
         if (!conflicts.isEmpty()) {
             throw new IllegalStateException(
-                "Methods annotated with both @KafkaListener and @EnhancedKafkaListener "
+                "Methods annotated with both @KafkaListener and @KafkaSubscription "
                     + "would consume each record twice: " + conflicts);
         }
 
@@ -142,19 +142,19 @@ public class Fluid {
             KafkaProcessor.processListeners(services.toArray());
         }
 
-        int total = enhancedMethods.size() + standardCount;
+        int total = subscriptionMethods.size() + standardCount;
         if (total == 0) {
             logger.warn("⚠️ {} service(s) discovered but no @KafkaListener or "
-                + "@EnhancedKafkaListener methods found — nothing will be consumed.",
+                + "@KafkaSubscription methods found — nothing will be consumed.",
                 services.size());
         } else {
-            logger.info("✅ Registered {} listener(s): {} standard, {} enhanced",
-                total, standardCount, enhancedMethods.size());
+            logger.info("✅ Registered {} listener(s): {} via @KafkaListener, {} via @KafkaSubscription",
+                total, standardCount, subscriptionMethods.size());
         }
     }
     
-    private void processEnhancedListener(Object service, Method method) {
-        EnhancedKafkaListener listener = method.getAnnotation(EnhancedKafkaListener.class);
+    private void processSubscription(Object service, Method method) {
+        KafkaSubscription listener = method.getAnnotation(KafkaSubscription.class);
         
         serviceExecutor.submit(() -> {
             try {
@@ -167,12 +167,12 @@ public class Fluid {
                 configureAndStartConsumer(service, method, listener);
                 
             } catch (Exception e) {
-                logger.error("Error processing enhanced listener: {}", e.getMessage(), e);
+                logger.error("Error processing subscription: {}", e.getMessage(), e);
             }
         });
     }
     
-    private void configureAndStartConsumer(Object service, Method method, EnhancedKafkaListener listener) {
+    private void configureAndStartConsumer(Object service, Method method, KafkaSubscription listener) {
         String topic = listener.topic();
         String groupId = listener.groupId();
         String bootstrapServers = KafkaConfig.resolveBootstrapServers(listener.bootstrapServers());
@@ -195,13 +195,13 @@ public class Fluid {
      *
      * <p>These were previously assembled into a local {@code Properties} that
      * was never passed anywhere, so every tuning attribute on
-     * {@link EnhancedKafkaListener} was silently inert.
+     * {@link KafkaSubscription} was silently inert.
      *
      * <p>Values are supplied as strings and parsed by Kafka's own
      * {@code ConfigDef}, which avoids the boxed-type mismatches that
      * {@code Properties} would otherwise carry into the client.
      */
-    private Properties buildConsumerOverrides(EnhancedKafkaListener listener) {
+    private Properties buildConsumerOverrides(KafkaSubscription listener) {
         Properties overrides = new Properties();
         overrides.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG,
             String.valueOf(listener.maxPollRecords()));
@@ -228,8 +228,8 @@ public class Fluid {
         }
     }
     
-    private AdvancedKafkaConsumer.MessageHandler createMessageHandler(Object service, Method method, 
-                                                                     EnhancedKafkaListener listener) {
+    private MessageConsumer.MessageHandler createMessageHandler(Object service, Method method, 
+                                                                     KafkaSubscription listener) {
         return record -> {
             try {
                 // Extract parameters
@@ -248,8 +248,8 @@ public class Fluid {
         };
     }
     
-    private AdvancedKafkaConsumer.BatchMessageHandler createBatchMessageHandler(Object service, Method method,
-                                                                               EnhancedKafkaListener listener) {
+    private MessageConsumer.BatchMessageHandler createBatchMessageHandler(Object service, Method method,
+                                                                               KafkaSubscription listener) {
         return records -> {
             logger.debug("Processing batch of {} messages", records.size());
             
@@ -275,7 +275,7 @@ public class Fluid {
     }
     
     private Object[] extractMessageParameters(Method method, ConsumerRecord<String, String> record,
-                                            EnhancedKafkaListener listener) {
+                                            KafkaSubscription listener) {
         Class<?>[] paramTypes = method.getParameterTypes();
         Object[] params = new Object[paramTypes.length];
         
@@ -294,7 +294,7 @@ public class Fluid {
         return params;
     }
     
-    private void handleMessageResult(Object result, EnhancedKafkaListener listener, ConsumerRecord<String, String> record) {
+    private void handleMessageResult(Object result, KafkaSubscription listener, ConsumerRecord<String, String> record) {
         // Handle successful message processing result
         if (result != null) {
             logger.debug("Message processed successfully, result: {}", result);
@@ -306,7 +306,7 @@ public class Fluid {
         }
     }
     
-    private void handleMessageError(Exception error, EnhancedKafkaListener listener, ConsumerRecord<String, String> record) {
+    private void handleMessageError(Exception error, KafkaSubscription listener, ConsumerRecord<String, String> record) {
         // Handle message processing errors
         if (listener.enableDeadLetterQueue() && !listener.deadLetterTopic().isEmpty()) {
             String errorMessage = String.format("Original topic: %s, Partition: %d, Offset: %d, Error: %s",
@@ -327,7 +327,7 @@ public class Fluid {
      * <p>A lookup failure returns {@code true} so startup still attempts
      * creation; {@link #createTopic} tolerates the topic already existing.
      */
-    private boolean shouldCreateTopic(EnhancedKafkaListener listener) {
+    private boolean shouldCreateTopic(KafkaSubscription listener) {
         try {
             if (topicManager().topicExists(listener.topic())) {
                 logger.debug("Topic '{}' already exists; skipping creation", listener.topic());
@@ -344,9 +344,9 @@ public class Fluid {
         }
     }
     
-    private void createTopic(EnhancedKafkaListener listener) {
+    private void createTopic(KafkaSubscription listener) {
         try {
-            NewTopic topic = KafkaConfig.createAdvancedTopic(
+            NewTopic topic = KafkaConfig.createConfiguredTopic(
                 listener.topic(), 
                 listener.partitions(), 
                 listener.replicationFactor()
@@ -421,14 +421,14 @@ public class Fluid {
     /**
      * Get the producer instance for manual use
      */
-    public AdvancedKafkaProducer getProducer() {
+    public MessageProducer getProducer() {
         return producer;
     }
     
     /**
      * Get the consumer instance for manual use
      */
-    public AdvancedKafkaConsumer getConsumer() {
+    public MessageConsumer getConsumer() {
         return consumer;
     }
     
@@ -480,7 +480,7 @@ public class Fluid {
                 }
             });
 
-            logger.info("✅ Enhanced Fluid Framework shut down successfully");
+            logger.info("✅ Fluid Framework shut down successfully");
         } finally {
             // Unconditional: `start()` is parked on this latch, so failing to
             // count it down hangs the process with no diagnostic.
