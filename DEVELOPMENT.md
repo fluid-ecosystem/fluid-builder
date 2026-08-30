@@ -1,6 +1,82 @@
 # 🛠️ Development Guide for `fluid-builder`
 
-This guide covers how to build, tag, and push the Docker image for the `fluid-builder`.
+This guide covers how to build and test `fluid-builder`, and how to build, tag
+and push its Docker image.
+
+---
+
+## 🏗️ Two build paths, one set of sources
+
+The framework sources are flat, package-less `.java` files at the repository
+root. There is no `src/main/java`, and there is no copy of them anywhere.
+
+**The source launcher is how the framework actually runs.** The Docker image
+copies the `.java` files in and compiles them at container start:
+
+```
+CMD java DependencyDownloader.java && java -cp $(java ListDependency.java) Fluid.java
+```
+
+**Maven exists for tests, linting and CI only.** Its output is never shipped.
+It compiles the same root files in place via `<sourceDirectory>${project.basedir}</sourceDirectory>`,
+so the two paths can never drift apart.
+
+### Run it the way it ships
+
+```bash
+java DependencyDownloader.java          # populates lib/
+java -cp "lib/*" Fluid.java
+```
+
+### Run the tests
+
+```bash
+mvn test
+```
+
+Requires JDK 24 or newer. Test sources live in `src/test/java` and are
+package-less, matching the framework sources.
+
+---
+
+## ⚠️ Two constraints worth knowing
+
+**The compiler release is pinned to 24, not the newest JDK available.** The
+container base image is Java 24 and compiles the sources itself at start-up,
+so a Java 25+ construct that Maven accepted would break the container at
+runtime with nothing to catch it. `<maven.compiler.release>24</maven.compiler.release>`
+is what prevents that.
+
+**The POM deliberately excludes transitive dependencies.** `kafka-clients`
+pulls `snappy-java`, `lz4-java` and `zstd-jni`; `spotbugs-annotations` pulls
+`jsr305`. `DependencyDownloader` fetches none of them, so leaving them in
+would give Maven a classpath the container does not have — `compression.type=snappy`
+would pass CI and fail in production. They are excluded so the build tests
+what actually ships.
+
+The dependency list therefore exists in two places that must stay in step:
+
+| Where | What it feeds |
+|---|---|
+| `DependencyDownloader.MINIMAL_REQUIRED_DEPS` | the running container |
+| `pom.xml` `<dependencies>` | tests and CI |
+
+Adding a dependency means adding it to **both**.
+
+Verify they still agree:
+
+```bash
+mvn dependency:tree | grep -E "compile|runtime"
+```
+
+---
+
+## 🧨 Name collisions
+
+With no packages, every top-level class competes with every imported type.
+`KafkaProducer` and `KafkaConsumer` are the obvious traps — the framework's
+own classes are named `AdvancedKafkaProducer` and `AdvancedKafkaConsumer`
+precisely to stay clear of `org.apache.kafka.clients.*`.
 
 ---
 
