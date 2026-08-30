@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * loop through the {@code newConsumer} seam with a {@link MockConsumer}, so
  * the delivery, ordering and commit behaviour is actually exercised.
  */
+@SuppressWarnings("unchecked")
 class AdvancedKafkaConsumerTest {
 
     private static final TopicPartition P0 = new TopicPartition("t", 0);
@@ -52,10 +53,37 @@ class AdvancedKafkaConsumerTest {
         };
     }
 
-    private void assign() throws InterruptedException {
-        Thread.sleep(200);
-        mock.rebalance(List.of(P0, P1));
-        Thread.sleep(200);
+    /**
+     * Queues assignment and records onto the consumer's own poll thread.
+     *
+     * <p>{@code schedulePollTask} runs each task inside a {@code poll()} call,
+     * in order, so the loop cannot observe records before the assignment that
+     * makes them visible. Sleeping and hoping the loop had started first was
+     * racy and produced an intermittent failure.
+     */
+    private void deliver(ConsumerRecord<String, String>... records) {
+        mock.schedulePollTask(() -> mock.rebalance(List.of(P0, P1)));
+        // Added in a single task so they surface as one poll batch, which is
+        // what a real poll() returns.
+        mock.schedulePollTask(() -> {
+            for (ConsumerRecord<String, String> record : records) {
+                mock.addRecord(record);
+            }
+        });
+    }
+
+    private static ConsumerRecord<String, String> record(int partition, long offset, String value) {
+        return new ConsumerRecord<>("t", partition, offset, "k", value);
+    }
+
+    /** Waits for the latch, failing the test rather than hanging. */
+    private static void await(CountDownLatch latch, String what) throws InterruptedException {
+        assertTrue(latch.await(10, TimeUnit.SECONDS), what);
+    }
+
+    /** Gives the loop a chance to finish the commit that follows the batch. */
+    private static void settle() throws InterruptedException {
+        Thread.sleep(500);
     }
 
     @Test
@@ -74,13 +102,11 @@ class AdvancedKafkaConsumerTest {
         CountDownLatch seen = new CountDownLatch(2);
         List<String> got = Collections.synchronizedList(new ArrayList<>());
 
+        deliver(record(0, 0, "one"), record(0, 1, "two"));
         consumer.subscribe("h:9092", "g", List.of("t"), r -> { got.add(r.value()); seen.countDown(); });
-        assign();
-        mock.addRecord(new ConsumerRecord<>("t", 0, 0, "k", "one"));
-        mock.addRecord(new ConsumerRecord<>("t", 0, 1, "k", "two"));
 
-        assertTrue(seen.await(5, TimeUnit.SECONDS), "handler was not invoked");
-        Thread.sleep(500);
+        await(seen, "handler was not invoked");
+        settle();
 
         assertEquals(List.of("one", "two"), got);
         assertEquals(2L, committed(P0));
@@ -92,6 +118,8 @@ class AdvancedKafkaConsumerTest {
         CountDownLatch seen = new CountDownLatch(4);
         List<String> got = Collections.synchronizedList(new ArrayList<>());
 
+        deliver(record(0, 0, "p0-a"), record(0, 1, "p0-b"),
+                record(1, 0, "p1-a"), record(1, 1, "POISON"), record(1, 2, "p1-after"));
         consumer.subscribe("h:9092", "g", List.of("t"), r -> {
             got.add(r.value());
             seen.countDown();
@@ -99,15 +127,9 @@ class AdvancedKafkaConsumerTest {
                 throw new IllegalStateException("boom");
             }
         });
-        assign();
-        mock.addRecord(new ConsumerRecord<>("t", 0, 0, "k", "p0-a"));
-        mock.addRecord(new ConsumerRecord<>("t", 0, 1, "k", "p0-b"));
-        mock.addRecord(new ConsumerRecord<>("t", 1, 0, "k", "p1-a"));
-        mock.addRecord(new ConsumerRecord<>("t", 1, 1, "k", "POISON"));
-        mock.addRecord(new ConsumerRecord<>("t", 1, 2, "k", "p1-after"));
 
-        assertTrue(seen.await(5, TimeUnit.SECONDS), "handlers were not invoked");
-        Thread.sleep(600);
+        await(seen, "handlers were not invoked");
+        settle();
 
         // Healthy partition fully processed, in order, fully committed.
         assertEquals(List.of("p0-a", "p0-b"), got.stream().filter(v -> v.startsWith("p0")).toList());
@@ -117,6 +139,13 @@ class AdvancedKafkaConsumerTest {
         assertEquals(1L, committed(P1));
         assertTrue(!got.contains("p1-after"),
             "records after a failure must not be delivered ahead of it");
+
+        // And the partition is rewound to the failed offset, so the next poll
+        // retries it instead of continuing past. Without the seek, the
+        // consumer's position has already advanced and the following record
+        // would be processed and committed straight over the failure.
+        assertEquals(1L, mock.position(P1), "failed partition should be rewound");
+        assertEquals(2L, mock.position(P0), "healthy partition should not be rewound");
     }
 
     @Test
@@ -125,15 +154,13 @@ class AdvancedKafkaConsumerTest {
         CountDownLatch seen = new CountDownLatch(1);
         List<Integer> sizes = Collections.synchronizedList(new ArrayList<>());
 
+        deliver(record(0, 0, "a"), record(0, 1, "b"));
         consumer.consumeBatch("h:9092", "g", "t", records -> {
             sizes.add(records.size());
             seen.countDown();
         });
-        assign();
-        mock.addRecord(new ConsumerRecord<>("t", 0, 0, "k", "a"));
-        mock.addRecord(new ConsumerRecord<>("t", 0, 1, "k", "b"));
 
-        assertTrue(seen.await(5, TimeUnit.SECONDS), "batch handler was not invoked");
+        await(seen, "batch handler was not invoked");
         assertTrue(sizes.get(0) >= 1, "batch should carry at least one record");
     }
 
@@ -167,12 +194,11 @@ class AdvancedKafkaConsumerTest {
     @DisplayName("metrics report consumption")
     void metrics() throws Exception {
         CountDownLatch seen = new CountDownLatch(1);
+        deliver(record(0, 0, "hello"));
         consumer.subscribe("h:9092", "g", List.of("t"), r -> seen.countDown());
-        assign();
-        mock.addRecord(new ConsumerRecord<>("t", 0, 0, "k", "hello"));
 
-        assertTrue(seen.await(5, TimeUnit.SECONDS));
-        Thread.sleep(400);
+        await(seen, "handler was not invoked");
+        settle();
 
         Map<String, Object> m = consumer.getMetrics();
         assertEquals(1L, m.get("totalMessagesConsumed"));
@@ -183,7 +209,7 @@ class AdvancedKafkaConsumerTest {
     @DisplayName("shutdown wakes the poll loop and clears registrations")
     void shutdown() throws Exception {
         consumer.subscribe("h:9092", "g", List.of("t"), r -> { });
-        assign();
+        settle();
 
         consumer.shutdown();
 
