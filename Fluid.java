@@ -1,5 +1,6 @@
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.common.errors.TopicExistsException;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
@@ -314,10 +315,33 @@ public class Fluid {
         }
     }
     
+    /**
+     * Whether the listener's topic needs creating.
+     *
+     * <p>Consults the broker rather than assuming. Returning a hardcoded
+     * {@code true} meant every listener issued a create on every start, which
+     * failed with {@code TopicExistsException} for anything already present
+     * and logged an error per listener per restart — training readers to
+     * ignore the log.
+     *
+     * <p>A lookup failure returns {@code true} so startup still attempts
+     * creation; {@link #createTopic} tolerates the topic already existing.
+     */
     private boolean shouldCreateTopic(EnhancedKafkaListener listener) {
-        // For demo purposes, we'll create topics. In production, you might want to check
-        // if the topic exists first
-        return true;
+        try {
+            if (topicManager().topicExists(listener.topic())) {
+                logger.debug("Topic '{}' already exists; skipping creation", listener.topic());
+                return false;
+            }
+            return true;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            logger.warn("Could not determine whether topic '{}' exists, attempting creation: {}",
+                listener.topic(), e.getMessage());
+            return true;
+        }
     }
     
     private void createTopic(EnhancedKafkaListener listener) {
@@ -333,8 +357,24 @@ public class Fluid {
                        listener.topic(), listener.partitions(), listener.replicationFactor());
                        
         } catch (Exception e) {
-            logger.error("Failed to create topic '{}': {}", listener.topic(), e.getMessage(), e);
+            // A concurrent creator winning the race is expected, not an error:
+            // several instances of a service start together and all attempt
+            // the same topic.
+            if (isTopicExists(e)) {
+                logger.debug("Topic '{}' was created concurrently", listener.topic());
+            } else {
+                logger.error("Failed to create topic '{}': {}", listener.topic(), e.getMessage(), e);
+            }
         }
+    }
+
+    private static boolean isTopicExists(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause()) {
+            if (c instanceof TopicExistsException) {
+                return true;
+            }
+        }
+        return false;
     }
     
     private List<Object> discoverServiceClasses() throws Exception {
