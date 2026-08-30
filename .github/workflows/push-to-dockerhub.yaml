@@ -1,0 +1,99 @@
+name: Push to Dockerhub
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  # Publishing runs the gate itself rather than trusting a separate workflow.
+  # `maifeeulasad/fluid-builder:latest` is the base image for every example,
+  # so a broken push propagates immediately and silently.
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 24
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '24'
+          cache: maven
+
+      - name: Fetch dependencies
+        run: java DependencyDownloader.java
+
+      - name: Compile
+        run: javac -Xlint:all -cp "lib/*" -d out *.java
+
+      - name: Test
+        run: mvn -B --no-transfer-progress test
+
+  push-to-dockerhub:
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # DEVELOPMENT.md documents date-based and semantic versioning, but the
+      # workflow only ever moved `latest`, leaving no tag to roll back to.
+      - name: Derive tags
+        id: tags
+        run: |
+          echo "date=v$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: |
+          docker build -t fluid-builder -f Dockerfile .
+
+      - name: Smoke test before publishing
+        run: |
+          set -euo pipefail
+          # No broker here, so the framework starts, finds no services and
+          # waits. Reaching the startup line proves dependency download and
+          # compile-from-source both succeeded inside the container, which is
+          # the one thing `javac` in the previous job cannot show.
+          docker run -d --name fluid-smoke fluid-builder
+
+          started=false
+          for _ in $(seq 1 90); do
+            if docker logs fluid-smoke 2>&1 | grep -q "Framework started successfully"; then
+              started=true
+              break
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' fluid-smoke)" != "true" ]; then
+              break
+            fi
+            sleep 2
+          done
+
+          docker logs fluid-smoke 2>&1 | tail -30
+          docker rm -f fluid-smoke >/dev/null 2>&1 || true
+
+          if [ "$started" != "true" ]; then
+            echo "::error::Image failed its smoke test; refusing to publish."
+            exit 1
+          fi
+          echo "Container started successfully."
+
+      - name: Tag and push
+        run: |
+          set -euo pipefail
+          for tag in latest "${{ steps.tags.outputs.date }}" "${{ steps.tags.outputs.sha }}"; do
+            docker tag fluid-builder "maifeeulasad/fluid-builder:${tag}"
+            docker push "maifeeulasad/fluid-builder:${tag}"
+            echo "pushed maifeeulasad/fluid-builder:${tag}"
+          done
