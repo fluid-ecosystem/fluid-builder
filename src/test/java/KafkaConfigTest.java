@@ -64,6 +64,51 @@ class KafkaConfigTest {
     }
 
     @Test
+    @DisplayName("numeric producer settings are readable as properties")
+    void numericSettingsAreReadable() {
+        Properties config = KafkaConfig.createProducerConfig();
+
+        // Properties.getProperty returns null for non-String values. The
+        // original suite asserted through getProperty and would have failed
+        // here; these settings must be stored as strings to be readable by
+        // anything that treats this as a real Properties.
+        assertEquals(String.valueOf(KafkaConfig.BATCH_SIZE),
+            config.getProperty(org.apache.kafka.clients.producer.ProducerConfig.BATCH_SIZE_CONFIG));
+        assertEquals(String.valueOf(KafkaConfig.LINGER_MS),
+            config.getProperty(org.apache.kafka.clients.producer.ProducerConfig.LINGER_MS_CONFIG));
+        assertEquals(String.valueOf(KafkaConfig.BUFFER_MEMORY),
+            config.getProperty(org.apache.kafka.clients.producer.ProducerConfig.BUFFER_MEMORY_CONFIG));
+    }
+
+    @Test
+    @DisplayName("a plain topic carries its name, partitions and replication factor")
+    void createsTopic() {
+        org.apache.kafka.clients.admin.NewTopic topic =
+            KafkaConfig.createTopic("test-topic", 5, (short) 2);
+
+        assertEquals("test-topic", topic.name());
+        assertEquals(5, topic.numPartitions());
+        assertEquals((short) 2, topic.replicationFactor());
+    }
+
+    @Test
+    @DisplayName("an advanced topic carries configs, and its codec is a usable one")
+    void createsAdvancedTopic() {
+        org.apache.kafka.clients.admin.NewTopic topic =
+            KafkaConfig.createAdvancedTopic("advanced-test-topic", 10, (short) 3);
+
+        assertEquals("advanced-test-topic", topic.name());
+        assertEquals(10, topic.numPartitions());
+        assertEquals((short) 3, topic.replicationFactor());
+
+        assertNotNull(topic.configs());
+        assertTrue(topic.configs().containsKey("compression.type"));
+        // The original asserted "snappy", which the shipped dependency set
+        // cannot load at all.
+        assertEquals(KafkaConfig.defaultCompressionType(), topic.configs().get("compression.type"));
+    }
+
+    @Test
     @DisplayName("producer config only ever selects a usable codec")
     void producerConfigUsesUsableCodec() {
         Properties config = KafkaConfig.createProducerConfig();

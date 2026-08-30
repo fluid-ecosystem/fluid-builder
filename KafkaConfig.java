@@ -150,6 +150,10 @@ public class KafkaConfig {
      * Creates an optimized Producer configuration
      */
     public static Properties createProducerConfig() {
+        // Every value is stored as a String. Properties is a String-keyed,
+        // String-valued contract: getProperty() returns null for anything
+        // else, so a boxed Integer here reads back as absent. Kafka's
+        // ConfigDef parses strings, so nothing is lost.
         Properties props = new Properties();
         
         // Basic Configuration
@@ -158,14 +162,14 @@ public class KafkaConfig {
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         
         // Performance Optimizations
-        props.put(ProducerConfig.BATCH_SIZE_CONFIG, BATCH_SIZE);
-        props.put(ProducerConfig.LINGER_MS_CONFIG, LINGER_MS);
-        props.put(ProducerConfig.BUFFER_MEMORY_CONFIG, BUFFER_MEMORY);
-        props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, MAX_IN_FLIGHT_REQUESTS);
+        props.put(ProducerConfig.BATCH_SIZE_CONFIG, String.valueOf(BATCH_SIZE));
+        props.put(ProducerConfig.LINGER_MS_CONFIG, String.valueOf(LINGER_MS));
+        props.put(ProducerConfig.BUFFER_MEMORY_CONFIG, String.valueOf(BUFFER_MEMORY));
+        props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, String.valueOf(MAX_IN_FLIGHT_REQUESTS));
         
         // Reliability & Retries
-        props.put(ProducerConfig.RETRIES_CONFIG, RETRIES);
-        props.put(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, RETRY_BACKOFF_MS);
+        props.put(ProducerConfig.RETRIES_CONFIG, String.valueOf(RETRIES));
+        props.put(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, String.valueOf(RETRY_BACKOFF_MS));
         props.put(ProducerConfig.ACKS_CONFIG, "all");
         
         // Compression for better throughput
@@ -174,10 +178,10 @@ public class KafkaConfig {
         props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, compressionType);
         
         // Delivery timeout
-        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 120000);
+        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, String.valueOf(120000));
         
         // Request timeout
-        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 30000);
+        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, String.valueOf(30000));
         
         return props;
     }
@@ -186,6 +190,9 @@ public class KafkaConfig {
      * Creates an optimized Consumer configuration
      */
     public static Properties createConsumerConfig(String groupId) {
+        // Stored as Strings throughout; see createProducerConfig. This matters
+        // most for enable.auto.commit, which the consumer reads back through
+        // getProperty to decide whether to commit manually.
         Properties props = new Properties();
         
         // Basic Configuration
@@ -198,16 +205,16 @@ public class KafkaConfig {
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         
         // Performance Configuration
-        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, MAX_POLL_RECORDS);
-        props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, SESSION_TIMEOUT_MS);
-        props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, HEARTBEAT_INTERVAL_MS);
+        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, String.valueOf(MAX_POLL_RECORDS));
+        props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, String.valueOf(SESSION_TIMEOUT_MS));
+        props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, String.valueOf(HEARTBEAT_INTERVAL_MS));
         
         // Auto-commit configuration
         props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false"); // Manual commit for better control
         
         // Connection settings
-        props.put(ConsumerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG, 540000);
-        props.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, 30000);
+        props.put(ConsumerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG, String.valueOf(540000));
+        props.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, String.valueOf(30000));
         
         return props;
     }
