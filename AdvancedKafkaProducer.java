@@ -183,10 +183,22 @@ public class AdvancedKafkaProducer {
         return future;
     }
     
+    /**
+     * Returns the producer for the given broker, creating it on first use.
+     *
+     * <p>The map is keyed by address and each entry is configured for that
+     * address. Previously the lambda parameter was logged and then discarded,
+     * so every entry was built from {@link #baseConfig} and therefore pointed
+     * at the default broker regardless of what the caller asked for.
+     */
     private KafkaProducer<String, String> getOrCreateProducer(String bootstrapServers) {
-        return producers.computeIfAbsent(bootstrapServers, servers -> {
+        String resolved = KafkaConfig.resolveBootstrapServers(bootstrapServers);
+        return producers.computeIfAbsent(resolved, servers -> {
             logger.info("Creating new Kafka producer for bootstrap servers: {}", servers);
-            return new KafkaProducer<>(baseConfig);
+            Properties config = new Properties();
+            config.putAll(baseConfig);
+            config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, servers);
+            return new KafkaProducer<>(config);
         });
     }
     
