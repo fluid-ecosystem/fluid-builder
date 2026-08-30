@@ -272,15 +272,15 @@ public class AdvancedKafkaConsumer {
                     }
 
                     Map<TopicPartition, OffsetAndMetadata> processed = new HashMap<>();
-                    Set<TopicPartition> failed = new HashSet<>();
+                    Map<TopicPartition, Long> failed = new HashMap<>();
 
                     for (ConsumerRecord<String, String> record : records) {
                         TopicPartition partition =
                             new TopicPartition(record.topic(), record.partition());
 
                         // Preserve ordering: once a partition fails, stop
-                        // consuming it for this batch.
-                        if (failed.contains(partition)) {
+                        // consuming it for the rest of this batch.
+                        if (failed.containsKey(partition)) {
                             continue;
                         }
 
@@ -289,13 +289,23 @@ public class AdvancedKafkaConsumer {
                             processed.put(partition, new OffsetAndMetadata(record.offset() + 1));
                             recordConsumed(record);
                         } catch (Exception e) {
-                            failed.add(partition);
+                            failed.put(partition, record.offset());
                             logger.error("Handler failed for {}-{} at offset {}; "
                                     + "partition not advanced: {}",
                                 record.topic(), record.partition(), record.offset(),
                                 e.getMessage(), e);
                         }
                     }
+
+                    // Rewind each failed partition to the record that failed.
+                    // Skipping the rest of the batch is not enough on its own:
+                    // the consumer's position has already moved past it, so
+                    // without a seek the next poll would deliver the following
+                    // record and commit straight over the failure.
+                    // Any record that succeeded before the failure stays
+                    // committed: its offset and the seek target are the same
+                    // point, so nothing is reprocessed and nothing is skipped.
+                    failed.forEach(consumer::seek);
 
                     // Commit only what was processed, and only when Kafka is
                     // not already committing on our behalf.
