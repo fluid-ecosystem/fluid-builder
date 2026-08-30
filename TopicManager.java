@@ -1,12 +1,18 @@
 import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.AlterConfigOp;
+import org.apache.kafka.clients.admin.Config;
+import org.apache.kafka.clients.admin.ConfigEntry;
 import org.apache.kafka.clients.admin.CreateTopicsResult;
 import org.apache.kafka.clients.admin.ListTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.apache.kafka.common.config.ConfigResource;
+
 import java.util.*;
 import java.util.concurrent.ExecutionException;
+import java.util.stream.Collectors;
 
 /**
  * Advanced Topic Manager for Kafka
@@ -70,25 +76,30 @@ public class TopicManager {
      * Get topic configuration
      */
     public Map<String, String> getTopicConfig(String topicName) throws ExecutionException, InterruptedException {
-        return adminClient.describeTopics(Collections.singleton(topicName))
+        ConfigResource resource = new ConfigResource(ConfigResource.Type.TOPIC, topicName);
+        Config config = adminClient.describeConfigs(Collections.singleton(resource))
             .all()
             .get()
-            .get(topicName)
-            .configs()
-            .entrySet()
+            .get(resource);
+
+        return config.entries()
             .stream()
-            .collect(HashMap::new, (map, entry) -> map.put(entry.getKey(), entry.getValue()), HashMap::putAll);
+            .collect(Collectors.toMap(ConfigEntry::name, ConfigEntry::value));
     }
     
     /**
      * Update topic configuration
      */
     public void updateTopicConfig(String topicName, Map<String, String> configs) throws ExecutionException, InterruptedException {
-        org.apache.kafka.clients.admin.AlterConfigsResult result = adminClient.alterConfigs(
-            Collections.singletonMap(new org.apache.kafka.common.config.TopicConfigResource(
-                org.apache.kafka.common.config.TopicConfigResource.Type.TOPIC, topicName), configs)
-        );
-        result.all().get();
+        ConfigResource resource = new ConfigResource(ConfigResource.Type.TOPIC, topicName);
+
+        Collection<AlterConfigOp> operations = configs.entrySet()
+            .stream()
+            .map(entry -> new AlterConfigOp(
+                new ConfigEntry(entry.getKey(), entry.getValue()), AlterConfigOp.OpType.SET))
+            .toList();
+
+        adminClient.incrementalAlterConfigs(Map.of(resource, operations)).all().get();
         logger.info("Successfully updated configuration for topic: {}", topicName);
     }
     
