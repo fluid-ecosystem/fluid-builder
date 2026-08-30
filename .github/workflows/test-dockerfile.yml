@@ -35,6 +35,12 @@ jobs:
       - name: Compile
         run: javac -Xlint:all -cp "lib/*" -d out *.java
 
+      # examples/ is not part of the shipped artifact, but it is the code
+      # users copy from. It went unbuildable for months without anyone
+      # noticing, so it is compiled here even though it is not packaged.
+      - name: Compile examples
+        run: javac -Xlint:all -cp "lib/*:out" -d out-examples examples/*.java
+
       - name: Test
         run: mvn -B --no-transfer-progress test
 

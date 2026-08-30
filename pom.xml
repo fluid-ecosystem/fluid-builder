@@ -136,8 +136,8 @@
                     <!--
                       sourceDirectory is the repo root, so everything that is
                       not framework source has to be kept out explicitly.
-                      examples/ still carries com.fluid.enhanced packages and
-                      does not belong to this artifact.
+                      examples/ is illustrative and does not belong to this
+                      artifact.
                     -->
                     <excludes>
                         <exclude>examples/**</exclude>

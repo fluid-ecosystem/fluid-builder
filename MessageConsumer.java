@@ -13,7 +13,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * Advanced Kafka Consumer with enhanced features:
+ * Kafka consumer supporting:
  * - Batch processing capabilities
  * - Manual offset management
  * - Dead letter queue support
@@ -21,9 +21,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * - Custom partitioning strategies
  * - Graceful shutdown handling
  */
-public class AdvancedKafkaConsumer {
+public class MessageConsumer {
     
-    private static final Logger logger = LoggerFactory.getLogger(AdvancedKafkaConsumer.class);
+    private static final Logger logger = LoggerFactory.getLogger(MessageConsumer.class);
     
     private static final Duration POLL_TIMEOUT = Duration.ofMillis(100);
 
@@ -54,7 +54,7 @@ public class AdvancedKafkaConsumer {
     private final ExecutorService messageProcessorExecutor;
     private volatile boolean running;
     
-    public AdvancedKafkaConsumer() {
+    public MessageConsumer() {
         this.consumers = new CopyOnWriteArrayList<>();
         this.totalMessagesConsumed = new AtomicLong(0);
         this.totalBytesConsumed = new AtomicLong(0);

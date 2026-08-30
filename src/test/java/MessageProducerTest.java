@@ -22,18 +22,18 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Ported from {@code com.fluid.enhanced.producer.AdvancedKafkaProducerTest}.
+ * Ported from the original packaged producer suite.
  *
- * <p>The original constructed a real {@code AdvancedKafkaProducer} and sent to
+ * <p>The original constructed a real {@code MessageProducer} and sent to
  * a live address, so every test blocked on metadata until {@code max.block.ms}
  * expired. These drive a {@link MockProducer} through the {@code newProducer}
  * seam instead: no broker, deterministic, and able to assert on what was
  * actually sent rather than only that a future was returned.
  */
-class AdvancedKafkaProducerTest {
+class MessageProducerTest {
 
     private MockProducer<String, String> mock;
-    private AdvancedKafkaProducer producer;
+    private MessageProducer producer;
 
     /** Captures the config each producer was built with. */
     private Properties lastConfig;
@@ -41,7 +41,7 @@ class AdvancedKafkaProducerTest {
     @BeforeEach
     void setUp() {
         mock = new MockProducer<>(true, new StringSerializer(), new StringSerializer());
-        producer = new AdvancedKafkaProducer() {
+        producer = new MessageProducer() {
             @Override
             protected Producer<String, String> newProducer(Properties config) {
                 lastConfig = config;
@@ -117,7 +117,7 @@ class AdvancedKafkaProducerTest {
     void sendFailureIsWrapped() {
         MockProducer<String, String> failing =
             new MockProducer<>(false, new StringSerializer(), new StringSerializer());
-        AdvancedKafkaProducer p = new AdvancedKafkaProducer() {
+        MessageProducer p = new MessageProducer() {
             @Override
             protected Producer<String, String> newProducer(Properties config) {
                 return failing;

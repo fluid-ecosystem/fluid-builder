@@ -5,10 +5,10 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Marks a method as a Kafka message handler with advanced delivery, batching
+ * Marks a method as a Kafka message handler with full control over delivery, batching
  * and error-handling semantics.
  *
- * <p>This is the advanced counterpart to {@link KafkaListener}. Where
+ * <p>The fuller counterpart to {@link KafkaListener}. Where
  * {@code @KafkaListener} covers the common case with three attributes, this
  * annotation exposes the full tuning surface: partitioning, batch consumption,
  * consumer-group timing, and dead letter routing.
@@ -28,7 +28,7 @@ import java.lang.annotation.Target;
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
-public @interface EnhancedKafkaListener {
+public @interface KafkaSubscription {
 
     // ---------------------------------------------------------------- topic
 
