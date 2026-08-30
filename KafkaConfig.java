@@ -1,0 +1,131 @@
+import org.apache.kafka.clients.admin.AdminClient;
+import org.apache.kafka.clients.admin.NewTopic;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.apache.kafka.common.serialization.StringSerializer;
+
+import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.ExecutionException;
+
+/**
+ * Advanced Kafka Configuration Manager
+ * Provides production-ready Kafka configurations with performance optimizations,
+ * security settings, and advanced features.
+ */
+public class KafkaConfig {
+    
+    // Producer Configuration
+    public static final String DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092";
+    public static final int DEFAULT_PARTITIONS = 3;
+    public static final short DEFAULT_REPLICATION_FACTOR = 1;
+    
+    // Performance Configuration
+    public static final int BATCH_SIZE = 32768; // 32KB
+    public static final int LINGER_MS = 5;
+    public static final int BUFFER_MEMORY = 33554432; // 32MB
+    public static final int MAX_IN_FLIGHT_REQUESTS = 5;
+    public static final long RETRY_BACKOFF_MS = 100;
+    public static final int RETRIES = 3;
+    
+    // Consumer Configuration
+    public static final int MAX_POLL_RECORDS = 500;
+    public static final long SESSION_TIMEOUT_MS = 30000;
+    public static final long HEARTBEAT_INTERVAL_MS = 3000;
+    public static final long AUTO_COMMIT_INTERVAL_MS = 5000;
+    
+    /**
+     * Creates an optimized Producer configuration
+     */
+    public static Properties createProducerConfig() {
+        Properties props = new Properties();
+        
+        // Basic Configuration
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, DEFAULT_BOOTSTRAP_SERVERS);
+        props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
+        
+        // Performance Optimizations
+        props.put(ProducerConfig.BATCH_SIZE_CONFIG, BATCH_SIZE);
+        props.put(ProducerConfig.LINGER_MS_CONFIG, LINGER_MS);
+        props.put(ProducerConfig.BUFFER_MEMORY_CONFIG, BUFFER_MEMORY);
+        props.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, MAX_IN_FLIGHT_REQUESTS);
+        
+        // Reliability & Retries
+        props.put(ProducerConfig.RETRIES_CONFIG, RETRIES);
+        props.put(ProducerConfig.RETRY_BACKOFF_MS_CONFIG, RETRY_BACKOFF_MS);
+        props.put(ProducerConfig.ACKS_CONFIG, "all");
+        
+        // Compression for better throughput
+        props.put(ProducerConfig.COMPRESSION_TYPE_CONFIG, "snappy");
+        
+        // Delivery timeout
+        props.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 120000);
+        
+        // Request timeout
+        props.put(ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 30000);
+        
+        return props;
+    }
+    
+    /**
+     * Creates an optimized Consumer configuration
+     */
+    public static Properties createConsumerConfig(String groupId) {
+        Properties props = new Properties();
+        
+        // Basic Configuration
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, DEFAULT_BOOTSTRAP_SERVERS);
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
+        
+        // Group Management
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, groupId);
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        
+        // Performance Configuration
+        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, MAX_POLL_RECORDS);
+        props.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, SESSION_TIMEOUT_MS);
+        props.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, HEARTBEAT_INTERVAL_MS);
+        
+        // Auto-commit configuration
+        props.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false"); // Manual commit for better control
+        
+        // Connection settings
+        props.put(ConsumerConfig.CONNECTIONS_MAX_IDLE_MS_CONFIG, 540000);
+        props.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, 30000);
+        
+        return props;
+    }
+    
+    /**
+     * Creates a topic with specified configuration
+     */
+    public static NewTopic createTopic(String topicName, int partitions, short replicationFactor) {
+        return new NewTopic(topicName, partitions, replicationFactor);
+    }
+    
+    /**
+     * Creates topics with advanced configuration
+     */
+    public static NewTopic createAdvancedTopic(String topicName, int partitions, short replicationFactor) {
+        NewTopic topic = new NewTopic(topicName, partitions, replicationFactor);
+        
+        // Configure topic properties
+        topic.configs(Map.of(
+            "cleanup.policy", "delete",           // Delete old messages
+            "compression.type", "snappy",         // Compress messages
+            "delete.retention.ms", "86400000",    // Keep deleted records for 1 day
+            "file.delete.delay.ms", "60000",      // Wait 1 minute before deleting files
+            "flush.ms", "1000",                   // Flush every second
+            "index.interval.bytes", "4096",       // Index every 4KB
+            "max.message.bytes", "1000000",       // 1MB max message size
+            "min.insync.replicas", "1",           // Minimum in-sync replicas
+            "retention.ms", "604800000",          // Keep messages for 7 days
+            "segment.bytes", "1073741824"         // 1GB per segment
+        ));
+        
+        return topic;
+    }
+}
