@@ -49,6 +49,7 @@ public class DependencyDownloader {
             Document doc = dBuilder.parse(file);
             doc.getDocumentElement().normalize();
 
+            Map<String, String> properties = readProperties(doc);
             NodeList dependencyNodes = doc.getElementsByTagNameNS("*", "dependency");
 
             for (int i = 0; i < dependencyNodes.getLength(); i++) {
@@ -56,9 +57,16 @@ public class DependencyDownloader {
                 if (depNode.getNodeType() == Node.ELEMENT_NODE) {
                     Element depElement = (Element) depNode;
 
-                    String groupId = getTagValue(depElement, "groupId");
-                    String artifactId = getTagValue(depElement, "artifactId");
-                    String version = getTagValue(depElement, "version");
+                    // Test-scoped artifacts belong to the build, not the
+                    // runtime the container assembles.
+                    String scope = getTagValue(depElement, "scope");
+                    if ("test".equals(scope) || "provided".equals(scope)) {
+                        continue;
+                    }
+
+                    String groupId = resolve(getTagValue(depElement, "groupId"), properties);
+                    String artifactId = resolve(getTagValue(depElement, "artifactId"), properties);
+                    String version = resolve(getTagValue(depElement, "version"), properties);
 
                     dependencies.add(new Dependency(groupId, artifactId, version));
                 }
@@ -69,6 +77,59 @@ public class DependencyDownloader {
             System.err.println("Error parsing XML in " + pomFilePath + ": " + e.getMessage());
         }
         return dependencies;
+    }
+
+    /**
+     * Reads the pom's {@code <properties>} block.
+     *
+     * <p>Only direct children of {@code <properties>} are taken, so nested
+     * configuration elements elsewhere in the pom cannot be mistaken for
+     * version properties.
+     */
+    private static Map<String, String> readProperties(Document doc) {
+        Map<String, String> properties = new HashMap<>();
+
+        NodeList blocks = doc.getElementsByTagNameNS("*", "properties");
+        for (int i = 0; i < blocks.getLength(); i++) {
+            NodeList children = blocks.item(i).getChildNodes();
+            for (int j = 0; j < children.getLength(); j++) {
+                Node child = children.item(j);
+                if (child.getNodeType() == Node.ELEMENT_NODE) {
+                    properties.put(child.getLocalName(), child.getTextContent().trim());
+                }
+            }
+        }
+
+        return properties;
+    }
+
+    /**
+     * Substitutes {@code ${...}} placeholders against the pom's properties.
+     *
+     * <p>Real poms declare versions as properties, so without this a
+     * coordinate reads literally as {@code gson-${gson.version}.jar} and the
+     * download 404s. Placeholders with no matching property are left intact
+     * so the failure names the unresolved key rather than a mangled URL.
+     */
+    private static String resolve(String value, Map<String, String> properties) {
+        if (value == null || !value.contains("${")) {
+            return value;
+        }
+
+        String resolved = value;
+        // Bounded: properties may refer to other properties, but a cycle must
+        // not spin here.
+        for (int pass = 0; pass < 10 && resolved.contains("${"); pass++) {
+            String before = resolved;
+            for (Map.Entry<String, String> entry : properties.entrySet()) {
+                resolved = resolved.replace("${" + entry.getKey() + "}", entry.getValue());
+            }
+            if (resolved.equals(before)) {
+                break;
+            }
+        }
+
+        return resolved;
     }
 
     private static String getTagValue(Element element, String tag) {
