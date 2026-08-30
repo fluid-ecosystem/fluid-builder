@@ -8,8 +8,7 @@ public class KafkaMessenger {
     private static final Map<String, Producer<String, String>> producers = new ConcurrentHashMap<>();
     
     public static void sendMessage(String topic, String message) {
-        // sendMessage("localhost:9092", topic, null, message);
-        sendMessage("kafka:9092", topic, null, message);
+        sendMessage(KafkaConfig.defaultBootstrapServers(), topic, null, message);
     }
 
     public static void sendMessage(String bootstrapServers, String topic, String key, String message) {

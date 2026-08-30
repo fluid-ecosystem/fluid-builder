@@ -27,7 +27,7 @@ public class KafkaProcessor {
             try {
                 KafkaListener config = method.getAnnotation(KafkaListener.class);
                 Properties props = new Properties();
-                props.put("bootstrap.servers", config.bootstrapServers());
+                props.put("bootstrap.servers", KafkaConfig.resolveBootstrapServers(config.bootstrapServers()));
                 props.put("group.id", config.groupId());
                 props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
                 props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
@@ -60,7 +60,7 @@ public class KafkaProcessor {
             if (method.isAnnotationPresent(SendTo.class) && result != null) {
                 SendTo sendTo = method.getAnnotation(SendTo.class);
                 String topic = sendTo.topic();
-                String bootstrapServers = sendTo.bootstrapServers();
+                String bootstrapServers = KafkaConfig.resolveBootstrapServers(sendTo.bootstrapServers());
                 KafkaMessenger.sendMessage(bootstrapServers, topic, null, result.toString());
             }
         } catch (Exception e) {
@@ -69,7 +69,7 @@ public class KafkaProcessor {
             if (method.isAnnotationPresent(ShortCircuit.class)) {
                 ShortCircuit sc = method.getAnnotation(ShortCircuit.class);
                 String topic = sc.topic();
-                String bootstrapServers = sc.bootstrapServers();
+                String bootstrapServers = KafkaConfig.resolveBootstrapServers(sc.bootstrapServers());
                 String errorMsg = "ShortCircuit: " + e.getMessage();
                 KafkaMessenger.sendMessage(bootstrapServers, topic, null, errorMsg);
             }

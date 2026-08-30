@@ -16,8 +16,23 @@ import java.util.concurrent.ExecutionException;
  */
 public class KafkaConfig {
     
-    // Producer Configuration
-    public static final String DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092";
+    /**
+     * Environment variable consulted for the broker address.
+     *
+     * <p>Already set to {@code kafka:9092} by the example
+     * {@code docker-compose.yaml} for both services.
+     */
+    public static final String BOOTSTRAP_SERVERS_ENV = "BOOTSTRAP_SERVERS";
+
+    /**
+     * Broker used when {@link #BOOTSTRAP_SERVERS_ENV} is unset.
+     *
+     * <p>Matches the Compose service name rather than {@code localhost},
+     * because the framework's deployment target is a container that reaches
+     * the broker by service name. A {@code localhost} default is only correct
+     * for a JVM sharing a host with the broker, which is not how this runs.
+     */
+    public static final String FALLBACK_BOOTSTRAP_SERVERS = "kafka:9092";
     public static final int DEFAULT_PARTITIONS = 3;
     public static final short DEFAULT_REPLICATION_FACTOR = 1;
     
@@ -36,13 +51,40 @@ public class KafkaConfig {
     public static final long AUTO_COMMIT_INTERVAL_MS = 5000;
     
     /**
+     * Resolves the broker address from the environment, falling back to
+     * {@link #FALLBACK_BOOTSTRAP_SERVERS}.
+     */
+    public static String defaultBootstrapServers() {
+        String configured = System.getenv(BOOTSTRAP_SERVERS_ENV);
+        return (configured == null || configured.isBlank())
+            ? FALLBACK_BOOTSTRAP_SERVERS
+            : configured;
+    }
+
+    /**
+     * Resolves an explicitly supplied broker address, treating blank as
+     * "inherit the framework default".
+     *
+     * <p>Annotation attributes default to the empty string so an unset value
+     * follows {@link #defaultBootstrapServers()} rather than pinning a literal
+     * at compile time.
+     *
+     * @param candidate address supplied by a caller or annotation, may be blank
+     */
+    public static String resolveBootstrapServers(String candidate) {
+        return (candidate == null || candidate.isBlank())
+            ? defaultBootstrapServers()
+            : candidate;
+    }
+
+    /**
      * Creates an optimized Producer configuration
      */
     public static Properties createProducerConfig() {
         Properties props = new Properties();
         
         // Basic Configuration
-        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, DEFAULT_BOOTSTRAP_SERVERS);
+        props.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, defaultBootstrapServers());
         props.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         props.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, StringSerializer.class.getName());
         
@@ -76,7 +118,7 @@ public class KafkaConfig {
         Properties props = new Properties();
         
         // Basic Configuration
-        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, DEFAULT_BOOTSTRAP_SERVERS);
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, defaultBootstrapServers());
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class.getName());
         

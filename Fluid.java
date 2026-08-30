@@ -172,7 +172,7 @@ public class Fluid {
     private void configureAndStartConsumer(Object service, Method method, EnhancedKafkaListener listener) {
         String topic = listener.topic();
         String groupId = listener.groupId();
-        String bootstrapServers = listener.bootstrapServers();
+        String bootstrapServers = KafkaConfig.resolveBootstrapServers(listener.bootstrapServers());
         
         // Create advanced consumer with custom configuration
         AdvancedKafkaConsumer customConsumer = createCustomConsumer(bootstrapServers, groupId, listener);

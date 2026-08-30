@@ -41,12 +41,11 @@ public @interface EnhancedKafkaListener {
     /**
      * Broker address for this listener.
      *
-     * <p>Note this defaults to {@code localhost:9092} while {@code @SendTo},
-     * {@code @ShortCircuit} and {@link KafkaMessenger} default to
-     * {@code kafka:9092}. Reconciling the three is tracked separately; the
-     * value is left as-is here so this change stays a faithful port.
+     * <p>Blank means inherit {@link KafkaConfig#defaultBootstrapServers()},
+     * which reads {@code BOOTSTRAP_SERVERS} from the environment. Set this
+     * only to pin one listener to a different broker.
      */
-    String bootstrapServers() default "localhost:9092";
+    String bootstrapServers() default "";
 
     // ------------------------------------------------------------ partitions
 
