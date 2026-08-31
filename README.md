@@ -1,119 +1,206 @@
 # 🌊 Fluid
 
-🚀 A **tiny but agile** microservice framework built in **Java 24** with first-class support for **Docker 🐳**, **Kubernetes ☸️**, and **Kafka 📨** event streaming.  
+🚀 A **tiny but agile** microservice framework built in **Java 24** with first-class support for **Docker 🐳**, **Kubernetes ☸️**, and **Kafka 📨** event streaming.
 Built for **speed, scale, and simplicity**.
 
 ---
 
 ## ✨ Features
 
-✅ **Java 24**-powered lightweight core  
-✅ 🔁 **Kafka-based event-driven architecture**  
-✅ 🐳 **Docker-ready** containers  
-✅ ☸️ **Kubernetes-deployable** out of the box  
-✅ 🔍 Minimal boilerplate, maximum flexibility  
-✅ 🔧 DIY microservice stack for builders and hackers   
+✅ **Java 24**-powered lightweight core
+✅ 🔁 **Kafka-based event-driven architecture**
+✅ 🐳 **Docker-ready** containers
+✅ ☸️ **Kubernetes-deployable** out of the box
+✅ 🔍 Minimal boilerplate, maximum flexibility
+✅ 🔧 DIY microservice stack for builders and hackers
 ✅ 😍 100% open source
+
+**No build tool.** There is no Maven or Gradle step to ship a service. Your
+`.java` files are copied into the image and compiled at container start.
 
 ---
 
 ## 📦 Getting Started
 
-### Build Your Microservice 🛠️
+A service is a `Dockerfile`, a `pom.xml` listing your dependencies, and your
+Java files. Nothing else.
 
-Create a `Fluid.java` class:
+```dockerfile
+FROM maifeeulasad/fluid-builder:latest
+
+COPY pom.xml .
+COPY *.java .
+```
+
+At container start Fluid downloads the dependencies your `pom.xml` names,
+compiles your sources, finds your listeners, and starts consuming.
+
+### Write a listener 🎧
+
+Any class with an annotated method is picked up — the file name does not
+matter.
+
+```java
+public class MessageService {
+
+    @KafkaListener(topic = "orders", groupId = "order-processors")
+    public void handleOrder(String message) {
+        System.out.println("📥 " + message);
+    }
+}
+```
+
+### Send messages 📤
+
+To write a producer instead of a consumer, supply your own `Fluid.java`. It
+replaces the framework's entry point.
 
 ```java
 public class Fluid {
     public static void main(String[] args) throws InterruptedException {
         try {
             for (int i = 0; i < 1000; i++) {
-                String key = "key-" + i;
-                String message = "Message " + i;
-                KafkaMessenger.sendMessage("test-topic1", message);
+                KafkaMessenger.sendMessage("orders", "Message " + i);
             }
         } finally {
-            System.out.println("Shutting down Kafka producer...");
             KafkaMessenger.shutdown();
         }
-        Thread.sleep(50000); // Keep the app alive for a bit
     }
 }
 ```
 
 ---
 
-### Create a Listener Service 🎧
+## 🧩 Annotations
+
+### `@KafkaListener` — the common case
 
 ```java
-public class MessageService {
-    @KafkaListener(topic = "test-topic1", groupId = "test-group")
-    public void handleMessage1(String message) {
-        System.out.println("1-🕒 Received at " + System.currentTimeMillis());
-        System.out.println("1-📥 Message: " + message);
-    }
-    @KafkaListener(topic = "test-topic2", groupId = "test-group")
-    public void handleMessage2(String message) {
-        System.out.println("2-🕒 Received at " + System.currentTimeMillis());
-        System.out.println("2-📥 Message: " + message);
+@KafkaListener(topic = "orders", groupId = "order-processors")
+public void handleOrder(String message) { }
+```
+
+| Attribute | Default | |
+|---|---|---|
+| `topic` | required | topic to consume |
+| `groupId` | required | consumer group to join |
+| `bootstrapServers` | inherits | broker address; blank follows `BOOTSTRAP_SERVERS` |
+
+### `@KafkaSubscription` — full control
+
+Same job, with batching, dead letter routing, topic creation and consumer
+tuning. Use it when you need one of those; `@KafkaListener` otherwise.
+
+```java
+@KafkaSubscription(
+    topic = "orders",
+    groupId = "order-processors",
+    partitions = 5,
+    batchEnabled = true,
+    enableDeadLetterQueue = true,
+    deadLetterTopic = "order-errors",
+    maxPollRecords = 100
+)
+public void handleOrder(String message) { }
+```
+
+Some attributes are accepted but not yet honoured — each is marked
+*not yet honoured* in its javadoc, so a setting that does nothing says so
+rather than pretending.
+
+A method may carry `@KafkaListener` **or** `@KafkaSubscription`, not both:
+each drives its own consumer, so the handler would run twice per record.
+Startup rejects it.
+
+### `@SendTo` — forward the result
+
+```java
+@KafkaListener(topic = "orders", groupId = "order-processors")
+@SendTo(topic = "processed-orders")
+public String handleOrder(String message) {
+    return "Processed: " + message;
+}
+```
+
+### `@ShortCircuit` — route failures
+
+```java
+@KafkaListener(topic = "orders", groupId = "order-processors")
+@ShortCircuit(topic = "order-errors")
+public void handleOrder(String message) {
+    if (message.contains("fail")) {
+        throw new RuntimeException("bad message");
     }
 }
 ```
 
-### Compound Operations
-```
-public class MessageService {
-    @KafkaListener(topic = "test-topic1", groupId = "test-group")
-    public void handleMessage1(String message) {
-        System.out.println("1-🕒 Received at " + System.currentTimeMillis());
-        System.out.println("1-📥 Message: " + message);
-    }
+---
 
-    @KafkaListener(topic = "test-topic2", groupId = "test-group")
-    @SendTo(topic = "processed-topic2")
-    public String handleMessage2(String message) {
-        System.out.println("2-🕒 Received at " + System.currentTimeMillis());
-        System.out.println("2-📥 Message: " + message);
-        // Forward processed message to another topic
-        return "Processed: " + message;
-    }
+## ⚙️ Configuration
 
-    @KafkaListener(topic = "test-topic3", groupId = "test-group")
-    @ShortCircuit(topic = "error-topic3")
-    public void handleMessageWithError(String message) {
-        if (message.contains("fail")) {
-            throw new RuntimeException("Error detected in message!");
-        }
-        System.out.println("3-🕒 Message: " + message);
-    }
-}
-```
+| Variable | Default | |
+|---|---|---|
+| `BOOTSTRAP_SERVERS` | `kafka:9092` | broker address for everything that does not set one explicitly |
+| `KAFKA_COMPRESSION_TYPE` | `gzip` | producer codec |
+
+`gzip` is the default because it is the only compressing codec that works
+with the dependency set Fluid downloads. `snappy`, `lz4` and `zstd` need
+third-party libraries that `kafka-clients` does not bundle — select one and
+Fluid tells you which library to add rather than failing later at send time.
+
+---
 
 ## 🛠️ Architecture
 
 ```
-[Fluid App] ---> [KafkaMessenger] ---> [Kafka Broker] ---> [KafkaProcessor] ---> [Your Listener]
+[Your Producer] ──▶ KafkaMessenger ──▶ [Kafka Broker] ──▶ MessageConsumer ──▶ [Your Listener]
+                    MessageProducer                       KafkaProcessor
 ```
 
-* 🔄 Sends and receives messages through **Kafka**
-* 🧩 Plug-n-play message handlers via `@KafkaListener`
-* 🧵 Simple threading and lifecycle controls
+* 🧩 Handlers are found by annotation at startup, not by file name
+* 🧵 Records are handled on the poll thread, so per-partition order holds
+* ✅ Offsets are committed only after a record has been processed
+* 🛑 A failing handler leaves its partition uncommitted and rewinds to retry,
+  rather than committing past the failure
+
+---
+
+## 🧪 Building and testing
+
+Run it the way it ships:
+
+```bash
+java DependencyDownloader.java   # populates lib/
+java -cp "lib/*" Fluid.java
+```
+
+Run the tests:
+
+```bash
+mvn test
+```
+
+Maven exists for tests, linting and CI only — its output is never shipped,
+and it compiles the same flat sources in place. See `DEVELOPMENT.md`.
 
 ---
 
 ## 🔮 Roadmap
 
-* [x] 🧵 Async/parallel message handling
-* [ ] 📊 Metrics (Prometheus or Micrometer)
 * [x] 🛑 Graceful shutdown hooks
+* [x] 🔁 At-least-once delivery with per-partition ordering
+* [x] 💀 Dead letter routing
+* [ ] 📊 Metrics (Prometheus or Micrometer)
 * [ ] 💾 Configuration via `fluid.yaml`
 * [ ] 🧠 Built-in retry and backoff strategy
+* [ ] 🔀 Parallel handling that preserves per-partition order
 
 ---
 
 ## 🤝 Contributing
 
-PRs are welcome! Open an issue or suggest an improvement — let’s make microservices fun and fast again 🧪
+PRs are welcome! Open an issue or suggest an improvement — let's make
+microservices fun and fast again 🧪
 
 ---
 
