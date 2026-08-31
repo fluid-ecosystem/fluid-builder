@@ -49,6 +49,15 @@ public class KafkaProcessor {
     }
 
     private static void invokeListener(Object bean, Method method, ConsumerRecord<String, String> record) {
+        String handler = bean.getClass().getSimpleName() + "." + method.getName();
+        KafkaListener listener = method.getAnnotation(KafkaListener.class);
+        String group = listener == null ? "" : listener.groupId();
+        long startedAt = System.nanoTime();
+
+        FrameworkMetrics metrics = FluidMetrics.framework();
+        metrics.messageConsumed(record.topic(), group, handler, valueBytes(record));
+        metrics.routeTaken(Route.declared(record.topic(), handler, Route.Kind.CONSUMES));
+
         try {
             Object result = null;
             if (method.getParameterCount() == 1) {
@@ -62,8 +71,11 @@ public class KafkaProcessor {
                 String topic = sendTo.topic();
                 String bootstrapServers = KafkaConfig.resolveBootstrapServers(sendTo.bootstrapServers());
                 KafkaMessenger.sendMessage(bootstrapServers, topic, null, result.toString());
+                metrics.routeTaken(Route.declared(handler, topic, Route.Kind.SEND_TO));
             }
+            metrics.handlerCompleted(handler, System.nanoTime() - startedAt);
         } catch (Exception e) {
+            metrics.handlerFailed(handler, record.topic());
             System.err.println("Error processing message: " + e.getMessage());
             // ShortCircuit handling
             if (method.isAnnotationPresent(ShortCircuit.class)) {
@@ -72,8 +84,15 @@ public class KafkaProcessor {
                 String bootstrapServers = KafkaConfig.resolveBootstrapServers(sc.bootstrapServers());
                 String errorMsg = "ShortCircuit: " + e.getMessage();
                 KafkaMessenger.sendMessage(bootstrapServers, topic, null, errorMsg);
+                metrics.routeTaken(Route.declared(handler, topic, Route.Kind.SHORT_CIRCUIT));
             }
         }
+    }
+
+    private static long valueBytes(ConsumerRecord<String, String> record) {
+        return record.value() == null
+            ? 0L
+            : record.value().getBytes(java.nio.charset.StandardCharsets.UTF_8).length;
     }
 
     public static void shutdown() {

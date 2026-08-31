@@ -79,8 +79,13 @@ public class Fluid {
             services.forEach(svc -> logger.info("  🔹 {}", svc.getClass().getSimpleName()));
         }
         
+        // Metrics before listeners, so nothing consumed goes unrecorded.
+        FluidMetrics.initialise();
+
         // Register handlers for both listener annotations
         registerListeners(services);
+
+        publishTopology(services);
         
         // Setup graceful shutdown
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -95,6 +100,41 @@ public class Fluid {
         shutdownLatch.await();
     }
     
+    /**
+     * Publishes every route this service can take, before it takes any.
+     *
+     * <p>Annotations give the consumed topics and the {@code @SendTo} /
+     * {@code @ShortCircuit} destinations. Direct sends through
+     * {@link KafkaMessenger} carry no annotation, so the sources are parsed as
+     * well — which is possible because they are shipped into the image and the
+     * container has a compiler.
+     *
+     * <p>The point is that a route nobody has exercised is still visible. A
+     * declared route with no traversals is a path that exists on paper only,
+     * and that is exactly the thing worth seeing.
+     */
+    private void publishTopology(List<Object> services) {
+        try {
+            TopologyScanner scanner = new TopologyScanner();
+            FrameworkMetrics metrics = FluidMetrics.framework();
+
+            Set<Route> routes = new LinkedHashSet<>(scanner.scanAnnotations(services));
+            routes.addAll(scanner.scanSources(new File(".")));
+            routes.forEach(metrics::declareRoute);
+
+            List<String> unresolved = scanner.unresolvedSends();
+            if (!unresolved.isEmpty()) {
+                logger.info("🧭 {} route(s) declared; {} send(s) target a computed topic and "
+                    + "will appear once used: {}", routes.size(), unresolved.size(), unresolved);
+            } else if (!routes.isEmpty()) {
+                logger.info("🧭 {} route(s) declared", routes.size());
+            }
+        } catch (Throwable t) {
+            // Topology is diagnostic. Losing it must not stop the service.
+            logger.warn("⚠️ Could not publish topology: {}", t.toString());
+        }
+    }
+
     /**
      * Registers every annotated handler found on the discovered services.
      *
@@ -588,6 +628,8 @@ public class Fluid {
             if (openTopicManager != null) {
                 closeQuietly("topic manager", openTopicManager::close);
             }
+
+            closeQuietly("metrics", FluidMetrics::shutdown);
 
             closeQuietly("service executor", () -> {
                 serviceExecutor.shutdown();

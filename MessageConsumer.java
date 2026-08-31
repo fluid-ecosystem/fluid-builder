@@ -305,7 +305,11 @@ public class MessageConsumer {
                     // Any record that succeeded before the failure stays
                     // committed: its offset and the seek target are the same
                     // point, so nothing is reprocessed and nothing is skipped.
-                    failed.forEach(consumer::seek);
+                    failed.forEach((partition, offset) -> {
+                        consumer.seek(partition, offset);
+                        FluidMetrics.framework()
+                            .partitionRewound(partition.topic(), partition.partition());
+                    });
 
                     // Commit only what was processed, and only when Kafka is
                     // not already committing on our behalf.
@@ -371,6 +375,7 @@ public class MessageConsumer {
         ManagedConsumer managed =
             new ManagedConsumer(newConsumer(config), config, description);
         consumers.add(managed);
+        FluidMetrics.framework().consumersActive(consumers.size());
         return managed;
     }
     
@@ -419,6 +424,7 @@ public class MessageConsumer {
         // Each poll loop closes its own consumer on the way out; this only
         // catches any that never started.
         consumers.clear();
+        FluidMetrics.framework().consumersActive(0);
         logger.info("All consumers shut down successfully");
     }
     
