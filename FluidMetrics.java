@@ -26,6 +26,19 @@ public final class FluidMetrics {
     public static final String PORT_ENV = "FLUID_METRICS_PORT";
     public static final String PATH_ENV = "FLUID_METRICS_PATH";
 
+    /**
+     * Address of a Prometheus Pushgateway, e.g. {@code pushgateway:9091}.
+     *
+     * <p>A pull-only setup cannot observe a process that exits: a producer
+     * that finishes its batch and stops takes its endpoint with it, and a
+     * scrape that never coincided with its lifetime records nothing. Pushing
+     * on shutdown closes that gap.
+     */
+    public static final String PUSHGATEWAY_ENV = "FLUID_METRICS_PUSHGATEWAY";
+
+    /** Job label attached to pushed metrics. */
+    public static final String JOB_ENV = "FLUID_METRICS_JOB";
+
     public static final int DEFAULT_PORT = 9400;
     public static final String DEFAULT_PATH = "/metrics";
 
@@ -82,6 +95,25 @@ public final class FluidMetrics {
         return intFromEnv(PORT_ENV, DEFAULT_PORT);
     }
 
+    /** Pushgateway address, or blank when pushing is not configured. */
+    public static String configuredPushgateway() {
+        String configured = System.getenv(PUSHGATEWAY_ENV);
+        return configured == null ? "" : configured.trim();
+    }
+
+    /**
+     * Job label for pushed metrics. Defaults to the hostname, which in a
+     * container is the container id — enough to tell two instances apart.
+     */
+    public static String configuredJob() {
+        String configured = System.getenv(JOB_ENV);
+        if (configured != null && !configured.isBlank()) {
+            return configured.trim();
+        }
+        String host = System.getenv("HOSTNAME");
+        return (host == null || host.isBlank()) ? "fluid" : host.trim();
+    }
+
     public static String configuredPath() {
         String configured = System.getenv(PATH_ENV);
         return (configured == null || configured.isBlank()) ? DEFAULT_PATH : configured.trim();
@@ -120,6 +152,14 @@ public final class FluidMetrics {
             recorder = created;
             framework = new FrameworkMetrics(created);
             enabled = true;
+
+            // The framework's own shutdown path calls shutdown(), but a
+            // service supplying its own Fluid.java never reaches it. Without
+            // this hook a batch producer would exit having pushed nothing,
+            // which is precisely the case the Pushgateway exists for.
+            Runtime.getRuntime().addShutdownHook(new Thread(FluidMetrics::shutdown,
+                "fluid-metrics-shutdown"));
+
             logger.info("📊 Metrics enabled via {} on port {}{}",
                 backend, configuredPort(), configuredPath());
         } catch (ClassNotFoundException | NoClassDefFoundError e) {
