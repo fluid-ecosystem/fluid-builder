@@ -23,7 +23,14 @@ public class KafkaMessenger {
         producer.send(new ProducerRecord<>(topic, key, message), (metadata, e) -> {
             if (e != null) {
                 System.err.println("Error sending message: " + e.getMessage());
+                return;
             }
+            FrameworkMetrics metrics = FluidMetrics.framework();
+            metrics.messageProduced(topic);
+            // Recorded as discovered rather than declared: this call site is
+            // only known statically when the topic is a literal, and the
+            // scanner cannot tell which send is executing here.
+            metrics.routeTaken(Route.discovered("KafkaMessenger", topic, Route.Kind.PRODUCES));
         });
     }
 

@@ -220,7 +220,13 @@ public class DependencyDownloader {
 
     public static void downloadDependenciesFromPom(String pomFile, String outputDir) {
         List<Dependency> pomDependencies = readPomFile(pomFile);
-        List<Dependency> allDependencies = addMissingMinimalDeps(pomDependencies);
+        List<Dependency> allDependencies = new ArrayList<>(addMissingMinimalDeps(pomDependencies));
+
+        for (Dependency dep : metricsDependencies()) {
+            if (!isDependencyPresent(allDependencies, dep)) {
+                allDependencies.add(dep);
+            }
+        }
 
         List<String> failed = new ArrayList<>();
 
@@ -242,6 +248,64 @@ public class DependencyDownloader {
             throw new IllegalStateException(
                 "Could not download " + failed.size() + " dependency(ies): " + failed);
         }
+    }
+
+    /**
+     * Extra dependencies pulled in only when a metrics backend is selected.
+     *
+     * <p>Metrics are off by default, so an image that does not use them stays
+     * exactly as small as before. Setting FLUID_METRICS is the only step
+     * needed to make them work.
+     */
+    private static final String PROMETHEUS_VERSION = "1.3.1";
+
+    /**
+     * Every artifact the Prometheus backend needs, listed in full.
+     *
+     * <p>This downloader resolves no transitive dependencies — it fetches
+     * exactly what it is told. Naming only `prometheus-metrics-core` and the
+     * HTTP exporter would leave nine jars missing and the backend would fail
+     * at class-load time with a message pointing at the wrong thing.
+     */
+    private static final Map<String, Dependency[]> METRICS_BACKEND_DEPS = Map.of(
+        "prometheus", prometheus(
+            "prometheus-metrics-core",
+            "prometheus-metrics-model",
+            "prometheus-metrics-config",
+            "prometheus-metrics-exposition-formats",
+            "prometheus-metrics-shaded-protobuf",
+            "prometheus-metrics-tracer-common",
+            "prometheus-metrics-tracer-initializer",
+            "prometheus-metrics-tracer-otel",
+            "prometheus-metrics-tracer-otel-agent",
+            "prometheus-metrics-exporter-common",
+            "prometheus-metrics-exporter-httpserver"));
+
+    private static Dependency[] prometheus(String... artifactIds) {
+        Dependency[] deps = new Dependency[artifactIds.length];
+        for (int i = 0; i < artifactIds.length; i++) {
+            deps[i] = new Dependency("io.prometheus", artifactIds[i], PROMETHEUS_VERSION);
+        }
+        return deps;
+    }
+
+    /** Backend dependencies for the configured metrics type, if any. */
+    static List<Dependency> metricsDependencies() {
+        String backend = System.getenv("FLUID_METRICS");
+        if (backend == null || backend.isBlank()) {
+            return List.of();
+        }
+
+        Dependency[] deps = METRICS_BACKEND_DEPS.get(backend.trim().toLowerCase());
+        if (deps == null) {
+            System.err.println("Unknown FLUID_METRICS=" + backend
+                + "; known backends are " + METRICS_BACKEND_DEPS.keySet());
+            return List.of();
+        }
+
+        System.out.println("Metrics backend '" + backend.trim()
+            + "' selected; adding its dependencies.");
+        return List.of(deps);
     }
 
     public static void main(String[] args) {

@@ -86,6 +86,7 @@ public class MessageProducer {
                     } else {
                         totalMessagesSent.incrementAndGet();
                         totalBytesSent.addAndGet(message.getBytes().length);
+                        FluidMetrics.framework().messageProduced(topic);
                         logger.debug("Message sent successfully to topic {}, partition {}, offset {}", 
                                    topic, metadata.partition(), metadata.offset());
                         future.complete(metadata);
@@ -195,6 +196,7 @@ public class MessageProducer {
         String resolved = KafkaConfig.resolveBootstrapServers(bootstrapServers);
         return producers.computeIfAbsent(resolved, servers -> {
             logger.info("Creating new Kafka producer for bootstrap servers: {}", servers);
+            FluidMetrics.framework().producersActive(producers.size() + 1);
             Properties config = new Properties();
             config.putAll(baseConfig);
             config.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, servers);
@@ -243,6 +245,7 @@ public class MessageProducer {
             }
         });
         producers.clear();
+        FluidMetrics.framework().producersActive(0);
         logger.info("All producers shut down successfully");
     }
 }

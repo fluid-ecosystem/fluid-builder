@@ -142,11 +142,57 @@ public void handleOrder(String message) {
 |---|---|---|
 | `BOOTSTRAP_SERVERS` | `kafka:9092` | broker address for everything that does not set one explicitly |
 | `KAFKA_COMPRESSION_TYPE` | `gzip` | producer codec |
+| `FLUID_METRICS` | unset (off) | metrics backend — currently `prometheus` |
+| `FLUID_METRICS_PORT` | `9400` | scrape endpoint port |
+| `FLUID_METRICS_PATH` | `/metrics` | scrape endpoint path |
 
 `gzip` is the default because it is the only compressing codec that works
 with the dependency set Fluid downloads. `snappy`, `lz4` and `zstd` need
 third-party libraries that `kafka-clients` does not bundle — select one and
 Fluid tells you which library to add rather than failing later at send time.
+
+---
+
+## 📊 Metrics
+
+Off by default. Set one variable and the backend's jars are fetched at
+container start — nothing to add to your `pom.xml`, and an image that does not
+use metrics stays exactly as small as before.
+
+```yaml
+environment:
+  - FLUID_METRICS=prometheus
+```
+
+Then scrape `http://your-service:9400/metrics`.
+
+Everything is named `fluid_*`, and the prefix is enforced rather than merely
+documented:
+
+```
+fluid_messages_consumed_total{topic,group,handler}
+fluid_messages_produced_total{topic}
+fluid_handler_duration_seconds{handler}
+fluid_handler_failures_total{handler,topic}
+fluid_partition_rewinds_total{topic,partition}
+```
+
+### Routes you can take, and routes you have taken
+
+At start-up Fluid works out every route your service *can* take, before it
+takes any — from `@KafkaListener`, `@SendTo` and `@ShortCircuit`, and by
+parsing your sources for direct `KafkaMessenger.sendMessage("topic", ...)`
+calls.
+
+```
+fluid_route_declared{from,to,type,dynamic}          1 for every possible route
+fluid_route_traversed_total{from,to,type,dynamic}   times it actually carried a message
+```
+
+A route with `declared=1` and no traversals is a path that exists but has never
+been used. A topic computed at runtime cannot be known in advance, so it is
+marked `dynamic="true"` and appears only once used — which is why the two cases
+are distinguishable rather than both looking like absence.
 
 ---
 
