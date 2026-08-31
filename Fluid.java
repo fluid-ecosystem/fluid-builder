@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.util.*;
@@ -412,6 +414,15 @@ public class Fluid {
             String name = file.getName();
             String className = name.substring(0, name.length() - ".java".length());
 
+            // Read the text before loading anything. Under the source
+            // launcher, Class.forName triggers compilation, and a compilation
+            // failure aborts the process — it cannot be caught below. Without
+            // this filter one unrelated broken file in the directory would
+            // stop the framework starting.
+            if (!mentionsListener(file)) {
+                continue;
+            }
+
             Class<?> clazz;
             try {
                 // false: inspect annotations without triggering static
@@ -443,6 +454,28 @@ public class Fluid {
         }
 
         return instances;
+    }
+
+    /**
+     * Whether a source file so much as mentions a listener annotation.
+     *
+     * <p>A cheap text check, deliberately done before the class is loaded. It
+     * is allowed to be over-eager: a false positive costs one class load, and
+     * the annotation check that follows settles it. A file that mentions a
+     * listener and then fails to compile still stops startup, which is
+     * correct — that is a real fault in something the framework was asked to
+     * run.
+     */
+    // Package-private for test access; everything here shares the unnamed package.
+    static boolean mentionsListener(File file) {
+        try {
+            String source = Files.readString(file.toPath());
+            return source.contains("@" + KafkaListener.class.getSimpleName())
+                || source.contains("@" + KafkaSubscription.class.getSimpleName());
+        } catch (IOException e) {
+            logger.debug("Could not read {}: {}", file.getName(), e.toString());
+            return false;
+        }
     }
 
     /** Whether any declared method carries a listener annotation. */
