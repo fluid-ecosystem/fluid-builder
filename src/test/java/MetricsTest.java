@@ -89,6 +89,18 @@ class MetricsTest {
     }
 
     @Test
+    @DisplayName("declaring a route also publishes both of its endpoints")
+    void routesPublishTheirNodes() {
+        FrameworkMetrics metrics = new FrameworkMetrics(new RecordingRecorder());
+
+        metrics.declareRoute(Route.declared("orders", "H.handle", Route.Kind.CONSUMES));
+        metrics.declareRoute(Route.declared("H.handle", "processed", Route.Kind.SEND_TO));
+
+        assertEquals(Set.of("orders", "H.handle", "processed"), metrics.declaredNodes(),
+            "a graph needs its vertices, not only its edges");
+    }
+
+    @Test
     @DisplayName("a dynamic route is distinguishable from a never-taken one")
     void dynamicRoutesAreMarked() {
         assertFalse(Route.declared("a", "b", Route.Kind.PRODUCES).dynamic());
