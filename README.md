@@ -145,6 +145,8 @@ public void handleOrder(String message) {
 | `FLUID_METRICS` | unset (off) | metrics backend — currently `prometheus` |
 | `FLUID_METRICS_PORT` | `9400` | scrape endpoint port |
 | `FLUID_METRICS_PATH` | `/metrics` | scrape endpoint path |
+| `FLUID_METRICS_PUSHGATEWAY` | unset | Pushgateway address, e.g. `pushgateway:9091` |
+| `FLUID_METRICS_JOB` | hostname | job label on pushed metrics |
 
 `gzip` is the default because it is the only compressing codec that works
 with the dependency set Fluid downloads. `snappy`, `lz4` and `zstd` need
@@ -176,6 +178,23 @@ fluid_handler_duration_seconds{handler}
 fluid_handler_failures_total{handler,topic}
 fluid_partition_rewinds_total{topic,partition}
 ```
+
+### Producers that exit
+
+A pull-based scrape cannot observe a process that has already stopped. A batch
+producer that sends and exits may never be scraped at all.
+
+Point it at a Pushgateway and it pushes on shutdown, whatever entry point it
+uses:
+
+```yaml
+environment:
+  - FLUID_METRICS=prometheus
+  - FLUID_METRICS_PUSHGATEWAY=pushgateway:9091
+```
+
+Scrape the gateway with `honor_labels: true`, or Prometheus rewrites every
+pushed series to the gateway itself and all your producers collapse into one.
 
 ### Routes you can take, and routes you have taken
 

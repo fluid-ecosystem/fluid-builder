@@ -31,6 +31,8 @@ public final class PrometheusMetricsRecorder implements MetricsRecorder {
     private static final String GAUGE = "io.prometheus.metrics.core.metrics.Gauge";
     private static final String HISTOGRAM = "io.prometheus.metrics.core.metrics.Histogram";
     private static final String HTTP_SERVER = "io.prometheus.metrics.exporter.httpserver.HTTPServer";
+    private static final String PUSH_GATEWAY =
+        "io.prometheus.metrics.exporter.pushgateway.PushGateway";
 
     private final Object registry;
     private final java.util.concurrent.atomic.AtomicBoolean recordingFailureReported =
@@ -82,6 +84,10 @@ public final class PrometheusMetricsRecorder implements MetricsRecorder {
 
     @Override
     public void close() {
+        // Push before tearing down. A process that is about to exit is
+        // precisely the one a scrape will miss.
+        pushIfConfigured();
+
         if (httpServer == null) {
             return;
         }
@@ -91,6 +97,39 @@ public final class PrometheusMetricsRecorder implements MetricsRecorder {
             logger.error("Error stopping the metrics endpoint: {}", e.getMessage(), e);
         } finally {
             httpServer = null;
+        }
+    }
+
+    /**
+     * Sends the current values to a Pushgateway, when one is configured.
+     *
+     * <p>Failure is logged, never propagated: this runs during shutdown, and
+     * losing metrics must not turn a clean exit into a failed one.
+     */
+    private void pushIfConfigured() {
+        String address = FluidMetrics.configuredPushgateway();
+        if (address.isEmpty()) {
+            return;
+        }
+
+        try {
+            Class<?> type = Class.forName(PUSH_GATEWAY);
+            Object builder = type.getMethod("builder").invoke(null);
+            Class<?> builderType = builder.getClass();
+
+            builderType.getMethod("address", String.class).invoke(builder, address);
+            builderType.getMethod("job", String.class).invoke(builder, FluidMetrics.configuredJob());
+            builderType.getMethod("registry", Class.forName(REGISTRY)).invoke(builder, registry);
+
+            Object gateway = builderType.getMethod("build").invoke(builder);
+            gateway.getClass().getMethod("push").invoke(gateway);
+
+            logger.info("📤 Pushed metrics to {} as job {}", address, FluidMetrics.configuredJob());
+        } catch (ClassNotFoundException | NoClassDefFoundError e) {
+            logger.error("⚠️ {} is set but the Pushgateway exporter is not on the classpath.",
+                FluidMetrics.PUSHGATEWAY_ENV);
+        } catch (Throwable t) {
+            logger.error("⚠️ Could not push metrics to {}: {}", address, t.toString());
         }
     }
 

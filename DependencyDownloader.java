@@ -279,7 +279,8 @@ public class DependencyDownloader {
             "prometheus-metrics-tracer-otel",
             "prometheus-metrics-tracer-otel-agent",
             "prometheus-metrics-exporter-common",
-            "prometheus-metrics-exporter-httpserver"));
+            "prometheus-metrics-exporter-httpserver",
+            "prometheus-metrics-exporter-pushgateway"));
 
     private static Dependency[] prometheus(String... artifactIds) {
         Dependency[] deps = new Dependency[artifactIds.length];
