@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -377,27 +378,110 @@ public class Fluid {
         return false;
     }
     
+    /**
+     * Instantiates every class in the working directory that declares a
+     * listener.
+     *
+     * <p>Selection is by annotation, not by file name. The previous
+     * {@code *Service.java} filter silently ignored a listener declared
+     * anywhere else — a handler in {@code OrderHandler.java} was never found,
+     * and the framework reported success having registered nothing.
+     *
+     * <p>Classes are loaded without initialising them, so the framework's own
+     * sources — which sit in the same directory in the container image — are
+     * inspected and skipped without running their static initialisers.
+     *
+     * @throws IllegalStateException if a class declaring listeners cannot be
+     *         instantiated; its handlers would never run, and failing here is
+     *         clearer than starting a framework that consumes nothing
+     */
     private List<Object> discoverServiceClasses() throws Exception {
+        File[] sources = new File(".").listFiles((dir, name) -> name.endsWith(".java"));
+        if (sources == null) {
+            return List.of();
+        }
+
+        // Stable order, so startup logs are comparable between runs.
+        Arrays.sort(sources, Comparator.comparing(File::getName));
+
+        ClassLoader loader = Thread.currentThread().getContextClassLoader();
         List<Object> instances = new ArrayList<>();
-        File currentDir = new File(".");
-        
-        File[] serviceFiles = currentDir.listFiles((dir, name) -> name.endsWith("Service.java"));
-        if (serviceFiles == null) return instances;
-        
-        for (File file : serviceFiles) {
-            String className = file.getName().replace(".java", "");
+        List<String> failures = new ArrayList<>();
+
+        for (File file : sources) {
+            String name = file.getName();
+            String className = name.substring(0, name.length() - ".java".length());
+
+            Class<?> clazz;
             try {
-                Class<?> clazz = Class.forName(className);
-                if (!java.lang.reflect.Modifier.isAbstract(clazz.getModifiers())) {
-                    Object instance = clazz.getDeclaredConstructor().newInstance();
-                    instances.add(instance);
-                }
+                // false: inspect annotations without triggering static
+                // initialisers on classes that turn out not to be services.
+                clazz = Class.forName(className, false, loader);
             } catch (Throwable t) {
-                logger.error("❌ Could not load {}: {}", className, t.getMessage());
+                logger.debug("Skipping {}: not loadable ({})", className, t.toString());
+                continue;
+            }
+
+            if (!declaresListener(clazz) || !isInstantiable(clazz)) {
+                continue;
+            }
+
+            try {
+                instances.add(clazz.getDeclaredConstructor().newInstance());
+            } catch (Throwable t) {
+                Throwable cause = rootCause(t);
+                logger.error("❌ {} declares listeners but could not be created: {}: {}",
+                    className, cause.getClass().getName(), cause.getMessage(), cause);
+                failures.add(className + " (" + cause + ")");
             }
         }
-        
+
+        if (!failures.isEmpty()) {
+            throw new IllegalStateException(
+                "Classes declaring listeners could not be instantiated, so their "
+                    + "handlers would never run: " + failures);
+        }
+
         return instances;
+    }
+
+    /** Whether any declared method carries a listener annotation. */
+    private static boolean declaresListener(Class<?> clazz) {
+        try {
+            for (Method method : clazz.getDeclaredMethods()) {
+                if (method.isAnnotationPresent(KafkaListener.class)
+                    || method.isAnnotationPresent(KafkaSubscription.class)) {
+                    return true;
+                }
+            }
+        } catch (Throwable t) {
+            // Unresolvable references in an unrelated class are not our problem.
+            logger.debug("Could not inspect {}: {}", clazz.getName(), t.toString());
+        }
+        return false;
+    }
+
+    private static boolean isInstantiable(Class<?> clazz) {
+        int modifiers = clazz.getModifiers();
+        boolean usable = !Modifier.isAbstract(modifiers)
+            && !clazz.isInterface()
+            && !clazz.isEnum()
+            && !clazz.isAnnotation()
+            && (clazz.getEnclosingClass() == null || Modifier.isStatic(modifiers));
+
+        if (!usable) {
+            logger.warn("⚠️ {} declares listeners but cannot be instantiated; skipping.",
+                clazz.getSimpleName());
+        }
+        return usable;
+    }
+
+    private static Throwable rootCause(Throwable t) {
+        Throwable cause = t;
+        while (cause.getCause() != null && cause.getCause() != cause) {
+            cause = cause.getCause();
+        }
+        return cause;
     }
     
     /**
