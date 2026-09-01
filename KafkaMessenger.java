@@ -30,7 +30,11 @@ public class KafkaMessenger {
             // Recorded as discovered rather than declared: this call site is
             // only known statically when the topic is a literal, and the
             // scanner cannot tell which send is executing here.
-            metrics.routeTaken(Route.discovered("KafkaMessenger", topic, Route.Kind.PRODUCES));
+            // Identify the producer by the service, not by the class doing the
+            // sending. Every service sends through KafkaMessenger, so using the
+            // class name collapses every producer in the system into one node.
+            metrics.routeTaken(Route.discovered(
+                FluidMetrics.configuredJob(), topic, Route.Kind.PRODUCES));
         });
     }
 
