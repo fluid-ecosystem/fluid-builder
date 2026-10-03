@@ -1,5 +1,14 @@
 # 🌊 Fluid
 
+[![Fluid Builder CI](https://github.com/fluid-ecosystem/fluid-builder/actions/workflows/test-dockerfile.yml/badge.svg)](https://github.com/fluid-ecosystem/fluid-builder/actions/workflows/test-dockerfile.yml)
+[![Push to Dockerhub](https://github.com/fluid-ecosystem/fluid-builder/actions/workflows/push-to-dockerhub.yaml/badge.svg)](https://github.com/fluid-ecosystem/fluid-builder/actions/workflows/push-to-dockerhub.yaml)
+[![GitHub release](https://img.shields.io/github/v/release/fluid-ecosystem/fluid-builder?label=release)](https://github.com/fluid-ecosystem/fluid-builder/releases/latest)
+[![Docker image version](https://img.shields.io/docker/v/maifeeulasad/fluid-builder?sort=semver&label=docker&logo=docker&logoColor=white)](https://hub.docker.com/r/maifeeulasad/fluid-builder)
+[![Docker pulls](https://img.shields.io/docker/pulls/maifeeulasad/fluid-builder?logo=docker&logoColor=white)](https://hub.docker.com/r/maifeeulasad/fluid-builder)
+[![Docker image size](https://img.shields.io/docker/image-size/maifeeulasad/fluid-builder/latest?logo=docker&logoColor=white)](https://hub.docker.com/r/maifeeulasad/fluid-builder)
+[![Dependabot](https://img.shields.io/badge/dependabot-enabled-brightgreen?logo=dependabot&logoColor=white)](https://github.com/fluid-ecosystem/fluid-builder/security/dependabot)
+[![License: MIT](https://img.shields.io/github/license/fluid-ecosystem/fluid-builder)](LICENSE)
+
 🚀 A **tiny but agile** microservice framework built in **Java 24** with first-class support for **Docker 🐳**, **Kubernetes ☸️**, and **Kafka 📨** event streaming.
 Built for **speed, scale, and simplicity**.
 
@@ -17,6 +26,41 @@ Built for **speed, scale, and simplicity**.
 
 **No build tool.** There is no Maven or Gradle step to ship a service. Your
 `.java` files are copied into the image and compiled at container start.
+
+---
+
+## 📚 Libraries
+
+### Bundled by default
+
+Fetched automatically at container start — nothing to add to your `pom.xml`:
+
+| Library | Used for |
+|---|---|
+| [`kafka-clients`](https://mvnrepository.com/artifact/org.apache.kafka/kafka-clients) | Kafka producer/consumer |
+| [`gson`](https://github.com/google/gson) | JSON (de)serialization |
+| [`slf4j-api`](https://www.slf4j.org/) + `slf4j-simple` | Logging |
+| [`spotbugs-annotations`](https://spotbugs.github.io/) | Static-analysis annotations |
+
+### Fetched on demand
+
+One environment variable, no `pom.xml` change: `FLUID_METRICS=prometheus`
+pulls in the Prometheus client (see **📊 Metrics**, below); selecting
+`snappy`, `lz4` or `zstd` compression needs its own jar too (see
+**⚙️ Configuration** below).
+
+### Supported via your own `pom.xml`
+
+Fluid has no opinion on how a service talks to a database — add the
+driver or ORM you want and it is fetched the same way everything else is.
+Demonstrated end to end, with Docker Compose and CI, in
+[fluid-example](https://github.com/fluid-ecosystem/fluid-example):
+
+| Backend | With an ORM | Without |
+|---|---|---|
+| PostgreSQL | Hibernate | raw JDBC |
+| MongoDB | — | official sync driver |
+| H2 (embedded) | — | raw JDBC |
 
 ---
 
@@ -264,10 +308,12 @@ built against this image.
 * [x] 🛑 Graceful shutdown hooks
 * [x] 🔁 At-least-once delivery with per-partition ordering
 * [x] 💀 Dead letter routing
-* [ ] 📊 Metrics (Prometheus or Micrometer)
+* [x] 📊 Metrics (Prometheus), pull and Pushgateway, declared vs. traversed routes
+* [x] 🗺️ Service topology visualization — see [dashboard](https://github.com/fluid-ecosystem/dashboard)
+* [x] 📚 Example suite: Kafka (basic + full API), Postgres (JDBC + Hibernate), MongoDB, H2 — see [fluid-example](https://github.com/fluid-ecosystem/fluid-example)
 * [ ] 💾 Configuration via `fluid.yaml`
-* [ ] 🧠 Built-in retry and backoff strategy
-* [ ] 🔀 Parallel handling that preserves per-partition order
+* [ ] 🧠 Built-in retry and backoff strategy — `@KafkaSubscription` accepts the attributes, not yet honoured
+* [ ] 🔀 Parallel handling that preserves per-partition order — `preserveOrder`, not yet honoured
 
 ---
 
