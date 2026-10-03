@@ -80,7 +80,14 @@
                     <artifactId>snappy-java</artifactId>
                 </exclusion>
                 <exclusion>
-                    <groupId>org.lz4</groupId>
+                    <!--
+                      kafka-clients 3.9.2 moved lz4-java from groupId org.lz4
+                      to at.yawk.lz4 (same package, net.jpountz.lz4, new
+                      maintainer). The old groupId here silently stopped
+                      matching, leaking the real jar onto the test classpath
+                      and masking validateCompressionType's lz4 check.
+                    -->
+                    <groupId>at.yawk.lz4</groupId>
                     <artifactId>lz4-java</artifactId>
                 </exclusion>
                 <exclusion>
