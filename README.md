@@ -250,6 +250,15 @@ and it compiles the same flat sources in place. See `DEVELOPMENT.md`.
 
 ---
 
+## 📚 Examples
+
+Runnable, docker-composed examples — Kafka producers/consumers, and database
+read/write with and without an ORM — live in
+[fluid-ecosystem/fluid-example](https://github.com/fluid-ecosystem/fluid-example),
+built against this image.
+
+---
+
 ## 🔮 Roadmap
 
 * [x] 🛑 Graceful shutdown hooks
