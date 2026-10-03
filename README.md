@@ -6,6 +6,7 @@
 [![Docker image version](https://img.shields.io/docker/v/maifeeulasad/fluid-builder?sort=semver&label=docker&logo=docker&logoColor=white)](https://hub.docker.com/r/maifeeulasad/fluid-builder)
 [![Docker pulls](https://img.shields.io/docker/pulls/maifeeulasad/fluid-builder?logo=docker&logoColor=white)](https://hub.docker.com/r/maifeeulasad/fluid-builder)
 [![Docker image size](https://img.shields.io/docker/image-size/maifeeulasad/fluid-builder/latest?logo=docker&logoColor=white)](https://hub.docker.com/r/maifeeulasad/fluid-builder)
+[![Attestations](https://img.shields.io/badge/attestations-provenance%20%2B%20sbom-blue?logo=docker&logoColor=white)](https://hub.docker.com/r/maifeeulasad/fluid-builder/tags)
 [![Dependabot](https://img.shields.io/badge/dependabot-enabled-brightgreen?logo=dependabot&logoColor=white)](https://github.com/fluid-ecosystem/fluid-builder/security/dependabot)
 [![License: MIT](https://img.shields.io/github/license/fluid-ecosystem/fluid-builder)](LICENSE)
 
@@ -16,13 +17,13 @@ Built for **speed, scale, and simplicity**.
 
 ## ✨ Features
 
-✅ **Java 24**-powered lightweight core
-✅ 🔁 **Kafka-based event-driven architecture**
-✅ 🐳 **Docker-ready** containers
-✅ ☸️ **Kubernetes-deployable** out of the box
-✅ 🔍 Minimal boilerplate, maximum flexibility
-✅ 🔧 DIY microservice stack for builders and hackers
-✅ 😍 100% open source
+- ✅ **Java 24**-powered lightweight core
+- ✅ 🔁 **Kafka-based event-driven architecture**
+- ✅ 🐳 **Docker-ready** containers
+- ✅ ☸️ **Kubernetes-deployable** out of the box
+- ✅ 🔍 Minimal boilerplate, maximum flexibility
+- ✅ 🔧 DIY microservice stack for builders and hackers
+- ✅ 😍 100% open source
 
 **No build tool.** There is no Maven or Gradle step to ship a service. Your
 `.java` files are copied into the image and compiled at container start.
@@ -291,6 +292,29 @@ mvn test
 
 Maven exists for tests, linting and CI only — its output is never shipped,
 and it compiles the same flat sources in place. See `DEVELOPMENT.md`.
+
+---
+
+## 🔏 Image attestations
+
+Every tag published to Docker Hub (`latest`, the date tag, and the commit
+tag) carries build provenance and an SBOM, attached as attestation
+manifests alongside the image rather than documented separately — so they
+can't silently go stale. The publish workflow refuses to push an image that
+fails its own smoke test first.
+
+Verify either with Buildx, no pull required:
+
+```bash
+docker buildx imagetools inspect maifeeulasad/fluid-builder:latest
+```
+
+or inspect the SBOM's actual package list with
+[Docker Scout](https://docs.docker.com/scout/):
+
+```bash
+docker scout sbom maifeeulasad/fluid-builder:latest
+```
 
 ---
 
