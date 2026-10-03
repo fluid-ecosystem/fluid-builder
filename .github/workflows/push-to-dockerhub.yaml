@@ -55,9 +55,17 @@ jobs:
           echo "date=v$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
           echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: Build Docker image
-        run: |
-          docker build -t fluid-builder -f Dockerfile .
+      # Loaded into the local Docker engine rather than pushed, so it can be
+      # run for the smoke test below. `--push` with provenance/SBOM produces
+      # an image index BuildKit cannot also hand back as a runnable local
+      # image in the same invocation.
+      - name: Build Docker image for the smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          tags: fluid-builder:ci-smoke
+          load: true
 
       - name: Smoke test before publishing
         run: |
@@ -66,7 +74,7 @@ jobs:
           # waits. Reaching the startup line proves dependency download and
           # compile-from-source both succeeded inside the container, which is
           # the one thing `javac` in the previous job cannot show.
-          docker run -d --name fluid-smoke fluid-builder
+          docker run -d --name fluid-smoke fluid-builder:ci-smoke
 
           started=false
           for _ in $(seq 1 90); do
@@ -89,11 +97,19 @@ jobs:
           fi
           echo "Container started successfully."
 
-      - name: Tag and push
-        run: |
-          set -euo pipefail
-          for tag in latest "${{ steps.tags.outputs.date }}" "${{ steps.tags.outputs.sha }}"; do
-            docker tag fluid-builder "maifeeulasad/fluid-builder:${tag}"
-            docker push "maifeeulasad/fluid-builder:${tag}"
-            echo "pushed maifeeulasad/fluid-builder:${tag}"
-          done
+      # Re-built (BuildKit cache makes this cheap — same Dockerfile, same
+      # context as the smoke-tested build above) and pushed with build
+      # provenance and an SBOM attached, so a pulled image can be verified
+      # with `docker buildx imagetools inspect` or `docker scout`.
+      - name: Build and push with provenance and SBOM attestations
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: |
+            maifeeulasad/fluid-builder:latest
+            maifeeulasad/fluid-builder:${{ steps.tags.outputs.date }}
+            maifeeulasad/fluid-builder:${{ steps.tags.outputs.sha }}
